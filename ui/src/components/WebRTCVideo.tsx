@@ -4,7 +4,7 @@ import { useResizeObserver } from "usehooks-ts";
 import { cx } from "@/cva.config";
 import { isWindows } from "@/utils";
 import useKeyboard from "@hooks/useKeyboard";
-import useMouse from "@hooks/useMouse";
+import useMouse, { isPicphoneTouchscreenMode } from "@hooks/useMouse";
 import { useRTCStore, useSettingsStore, useUiStore, useVideoStore } from "@hooks/stores";
 import VirtualKeyboard from "@components/VirtualKeyboard";
 import Actionbar from "@components/ActionBar";
@@ -45,6 +45,7 @@ export default function WebRTCVideo({
   const {
     getRelMouseMoveHandler,
     getAbsMouseMoveHandler,
+    getTouchscreenMoveHandler,
     getMouseWheelHandler,
     resetMousePosition,
   } = useMouse();
@@ -211,7 +212,9 @@ export default function WebRTCVideo({
     const abortController = new AbortController();
     const signal = abortController.signal;
 
-    document.addEventListener("pointerlockchange", handlePointerLockChange, { signal });
+    document.addEventListener("pointerlockchange", handlePointerLockChange, {
+      signal,
+    });
 
     return () => {
       abortController.abort();
@@ -258,6 +261,17 @@ export default function WebRTCVideo({
   );
 
   const relMouseMoveHandler = useMemo(() => getRelMouseMoveHandler(), [getRelMouseMoveHandler]);
+
+  const touchscreenMoveHandler = useMemo(
+    () =>
+      getTouchscreenMoveHandler({
+        videoClientWidth,
+        videoClientHeight,
+        videoWidth,
+        videoHeight,
+      }),
+    [getTouchscreenMoveHandler, videoClientWidth, videoClientHeight, videoWidth, videoHeight],
+  );
 
   const mouseWheelHandler = useMemo(() => getMouseWheelHandler(), [getMouseWheelHandler]);
 
@@ -477,7 +491,9 @@ export default function WebRTCVideo({
       document.addEventListener("keyup", keyUpHandler, { signal });
 
       window.addEventListener("blur", resetKeyboardState, { signal });
-      document.addEventListener("visibilitychange", resetKeyboardState, { signal });
+      document.addEventListener("visibilitychange", resetKeyboardState, {
+        signal,
+      });
 
       return () => {
         abortController.abort();
@@ -496,7 +512,9 @@ export default function WebRTCVideo({
       const signal = abortController.signal;
 
       // To prevent the video from being paused when the user presses a space in fullscreen mode
-      videoElmRefValue.addEventListener("keydown", videoKeyDownHandler, { signal });
+      videoElmRefValue.addEventListener("keydown", videoKeyDownHandler, {
+        signal,
+      });
       videoElmRefValue.addEventListener("keyup", videoKeyUpHandler, { signal });
 
       // We need to know when the video is playing to update state and video size
@@ -516,13 +534,19 @@ export default function WebRTCVideo({
       if (!videoElmRefValue) return;
 
       const isRelativeMouseMode = settings.mouseMode === "relative";
-      const mouseHandler = isRelativeMouseMode ? relMouseMoveHandler : absMouseMoveHandler;
+      const mouseHandler = isPicphoneTouchscreenMode()
+        ? touchscreenMoveHandler
+        : isRelativeMouseMode
+          ? relMouseMoveHandler
+          : absMouseMoveHandler;
 
       const abortController = new AbortController();
       const signal = abortController.signal;
 
       videoElmRefValue.addEventListener("mousemove", mouseHandler, { signal });
-      videoElmRefValue.addEventListener("pointerdown", mouseHandler, { signal });
+      videoElmRefValue.addEventListener("pointerdown", mouseHandler, {
+        signal,
+      });
       videoElmRefValue.addEventListener("pointerup", mouseHandler, { signal });
       videoElmRefValue.addEventListener("wheel", mouseWheelHandler, {
         signal,
@@ -542,11 +566,15 @@ export default function WebRTCVideo({
       } else {
         // Reset the mouse position when the window is blurred or the document is hidden
         window.addEventListener("blur", resetMousePosition, { signal });
-        document.addEventListener("visibilitychange", resetMousePosition, { signal });
+        document.addEventListener("visibilitychange", resetMousePosition, {
+          signal,
+        });
       }
 
       const preventContextMenu = (e: MouseEvent) => e.preventDefault();
-      videoElmRefValue.addEventListener("contextmenu", preventContextMenu, { signal });
+      videoElmRefValue.addEventListener("contextmenu", preventContextMenu, {
+        signal,
+      });
 
       return () => {
         abortController.abort();
@@ -558,6 +586,7 @@ export default function WebRTCVideo({
       requestPointerLock,
       absMouseMoveHandler,
       relMouseMoveHandler,
+      touchscreenMoveHandler,
       mouseWheelHandler,
       resetMousePosition,
       settings.mouseMode,
@@ -606,13 +635,8 @@ export default function WebRTCVideo({
     <div className="grid h-full w-full grid-rows-(--grid-layout)">
       <div className="flex min-h-[39.5px] flex-col">
         <div className="flex flex-col">
-          <fieldset
-            disabled={peerConnection?.connectionState !== "connected"}
-            className="contents"
-          >
-            <Actionbar
-              requestFullscreen={requestFullscreen}
-            />
+          <fieldset disabled={peerConnection?.connectionState !== "connected"} className="contents">
+            <Actionbar requestFullscreen={requestFullscreen} />
             <MacroBar />
           </fieldset>
         </div>
@@ -634,9 +658,7 @@ export default function WebRTCVideo({
                 <div className="grid grow grid-rows-(--grid-bodyFooter) overflow-hidden">
                   {/* In relative mouse mode and under https, we enable the pointer lock, and to do so we need a bar to show the user to click on the video to enable mouse control */}
                   <PointerLockBar show={showPointerLockBar} />
-                  <div
-                    className="relative mx-4 my-2 flex items-center justify-center overflow-hidden"
-                  >
+                  <div className="relative mx-4 my-2 flex items-center justify-center overflow-hidden">
                     <div
                       ref={fullscreenContainerRef}
                       className="relative flex h-full w-full items-center justify-center"
@@ -652,20 +674,17 @@ export default function WebRTCVideo({
                         disablePictureInPicture
                         controlsList="nofullscreen"
                         style={videoStyle}
-                        className={cx(
-                          "h-full w-full object-contain transition-all duration-1000",
-                          {
-                            "cursor-none": settings.isCursorHidden,
-                            "pointer-events-none": isOcrMode,
-                            "opacity-0!":
-                              isVideoLoading ||
-                              hdmiError ||
-                              hasConnectionIssues ||
-                              peerConnectionState !== "connected",
-                            "opacity-60!": showPointerLockBar,
-                            "animate-slideUpFade": isPlaying,
-                          },
-                        )}
+                        className={cx("h-full w-full object-contain transition-all duration-1000", {
+                          "cursor-none": settings.isCursorHidden,
+                          "pointer-events-none": isOcrMode,
+                          "opacity-0!":
+                            isVideoLoading ||
+                            hdmiError ||
+                            hasConnectionIssues ||
+                            peerConnectionState !== "connected",
+                          "opacity-60!": showPointerLockBar,
+                          "animate-slideUpFade": isPlaying,
+                        })}
                       />
                       <OcrOverlay />
                       {peerConnection?.connectionState == "connected" && !hasConnectionIssues && (
