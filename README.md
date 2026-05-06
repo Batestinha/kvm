@@ -54,6 +54,8 @@ This is intended to address Android target input problems where Android treats
 JetKVM absolute mouse input as a mouse, producing cursor/IME behavior instead of
 normal touch behavior.
 
+A companion apk was made for the target android device to assist with lockscreen interaction.
+
 ### Android Controller UI
 
 The web UI includes an Android compact controller mode. In that mode it removes
