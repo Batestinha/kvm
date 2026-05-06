@@ -99,8 +99,10 @@ function ActionButton({
 
 export default function AndroidCompactControls({
   requestFullscreen,
+  turnOnDisplay,
 }: {
   requestFullscreen: () => Promise<void>;
+  turnOnDisplay: () => void;
 }) {
   const { navigateTo } = useDeviceUiNavigation();
   const { isVirtualKeyboardEnabled, setVirtualKeyboardEnabled } = useHidStore();
@@ -290,6 +292,14 @@ export default function AndroidCompactControls({
                 icon={LuHardDrive}
                 label={m.action_bar_virtual_media()}
                 onClick={() => openPanel("media")}
+              />
+              <ActionButton
+                icon={LuPower}
+                label="Turn on display"
+                onClick={() => {
+                  turnOnDisplay();
+                  closePanel();
+                }}
               />
               <ActionButton
                 icon={LuPower}

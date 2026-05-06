@@ -74,6 +74,10 @@ export default function WebRTCVideo({
     void executeMacro([{ keys: ["Tab"], modifiers: ["AltLeft"], delay: 100 }]);
   }, [executeMacro]);
 
+  const turnOnAndroidDisplay = useCallback(() => {
+    sendAndroidKeyTap(keys.Pause);
+  }, [sendAndroidKeyTap]);
+
   const {
     getRelMouseMoveHandler,
     getAbsMouseMoveHandler,
@@ -901,7 +905,12 @@ export default function WebRTCVideo({
           </div>
         </div>
       </div>
-      {compactAndroidMode && <AndroidCompactControls requestFullscreen={requestFullscreen} />}
+      {compactAndroidMode && (
+        <AndroidCompactControls
+          requestFullscreen={requestFullscreen}
+          turnOnDisplay={turnOnAndroidDisplay}
+        />
+      )}
       {!hideStatusBar && !compactAndroidMode && (
         <div>
           <InfoBar />
