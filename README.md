@@ -19,9 +19,9 @@
 > APK for trusted keyguard dismissal.
 >
 > Android APK releases:
-> [JetKVM Android Controller 1.5](https://github.com/Batestinha/jetkvm-android-controller/releases/tag/v1.5)
+> [JetKVM Android Controller 1.6](https://github.com/Batestinha/jetkvm-android-controller/releases/tag/v1.6)
 > and
-> [JetKVM Companion 1.3](https://github.com/Batestinha/jetkvm-companion/releases/tag/v1.3)
+> [JetKVM Companion 1.4](https://github.com/Batestinha/jetkvm-companion/releases/tag/v1.4)
 
 ## Android Support Fork
 
@@ -119,6 +119,10 @@ The compact mode also scopes phone-shaped display crop behavior to Android
 compact controller mode only, so desktop users keep the normal JetKVM video
 layout.
 
+The compact floating menu also includes **Turn on display**, which sends a
+short USB HID `Pause` key tap. On the tested Pixel 8 Android target this wakes
+the display without invoking Android Back/Home/Recents or typing text.
+
 ### Native Android Controller APK
 
 The `jetkvm-android/` directory contains a small native Android wrapper for the
@@ -147,15 +151,15 @@ cd /path/to/kvm
 Latest Android APK releases:
 
 - Controller release:
-  [JetKVM Android Controller 1.5](https://github.com/Batestinha/jetkvm-android-controller/releases/tag/v1.5)
+  [JetKVM Android Controller 1.6](https://github.com/Batestinha/jetkvm-android-controller/releases/tag/v1.6)
 - Controller asset:
-  `JetKVM-android-controller-1.5.apk`
+  `JetKVM-android-controller-1.6.apk`
 - Controller Obtainium source:
   `https://github.com/Batestinha/jetkvm-android-controller`
 - Companion release:
-  [JetKVM Companion 1.3](https://github.com/Batestinha/jetkvm-companion/releases/tag/v1.3)
+  [JetKVM Companion 1.4](https://github.com/Batestinha/jetkvm-companion/releases/tag/v1.4)
 - Companion asset:
-  `JetKVM-Companion-1.3.apk`
+  `JetKVM-Companion-1.4.apk`
 - Companion Obtainium source:
   `https://github.com/Batestinha/jetkvm-companion`
 

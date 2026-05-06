@@ -16,7 +16,9 @@ http://jetkvm.local/?jetkvmAndroid=1
 Android controller mode keeps the stream as the primary surface, hides the
 desktop-oriented header/action bars, and exposes those actions through a
 draggable floating control button. The button is clamped to the viewport so it
-remains reachable.
+remains reachable. The floating menu includes **Turn on display**, which sends
+a harmless USB HID `Pause` key tap to wake an Android target display without
+triggering a normal Android navigation action.
 
 The native login screen stores the last controller URL. Use the in-app logout
 action to return to the native login screen and change the URL or credentials.
@@ -31,13 +33,13 @@ rejecting arbitrary public cleartext HTTP URLs before the WebView is opened.
 Latest release:
 
 ```text
-https://github.com/Batestinha/jetkvm-android-controller/releases/tag/v1.5
+https://github.com/Batestinha/jetkvm-android-controller/releases/tag/v1.6
 ```
 
 Latest APK asset:
 
 ```text
-JetKVM-android-controller-1.5.apk
+JetKVM-android-controller-1.6.apk
 ```
 
 Obtainium source:
