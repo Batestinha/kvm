@@ -801,7 +801,7 @@ export default function WebRTCVideo({
           </div>
         </div>
       </div>
-      {compactControllerMode && <AndroidCompactControls requestFullscreen={requestFullscreen} />}
+      {compactControllerMode && <AndroidCompactControls />}
       {!hideStatusBar && !compactControllerMode && (
         <div>
           <InfoBar />
