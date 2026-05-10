@@ -52,6 +52,10 @@ type BacklightSettings struct {
 	OffAfter      int `json:"off_after"`
 }
 
+type TargetTypeSettings struct {
+	TargetType string `json:"target_type"`
+}
+
 func writeJSONRPCResponse(response JSONRPCResponse, session *Session) {
 	responseBytes, err := json.Marshal(response)
 	if err != nil {
@@ -325,6 +329,27 @@ func rpcGetBacklightSettings() (*BacklightSettings, error) {
 		DimAfter:      int(config.DisplayDimAfterSec),
 		OffAfter:      int(config.DisplayOffAfterSec),
 	}, nil
+}
+
+func rpcGetTargetType() (*TargetTypeSettings, error) {
+	targetType := config.TargetType
+	if targetType == "" {
+		targetType = "generic"
+	}
+	return &TargetTypeSettings{TargetType: targetType}, nil
+}
+
+func rpcSetTargetType(settings TargetTypeSettings) error {
+	switch settings.TargetType {
+	case "", "generic":
+		config.TargetType = "generic"
+	case "android":
+		config.TargetType = "android"
+	default:
+		return fmt.Errorf("invalid target type: %s", settings.TargetType)
+	}
+
+	return SaveConfig()
 }
 
 const (
@@ -1317,6 +1342,8 @@ var rpcHandlers = map[string]RPCHandler{
 	"getDisplayRotation":         {Func: rpcGetDisplayRotation},
 	"setBacklightSettings":       {Func: rpcSetBacklightSettings, Params: []string{"params"}},
 	"getBacklightSettings":       {Func: rpcGetBacklightSettings},
+	"getTargetType":              {Func: rpcGetTargetType},
+	"setTargetType":              {Func: rpcSetTargetType, Params: []string{"settings"}},
 	"getDCPowerState":            {Func: rpcGetDCPowerState},
 	"setDCPowerState":            {Func: rpcSetDCPowerState, Params: []string{"enabled"}},
 	"setDCRestoreState":          {Func: rpcSetDCRestoreState, Params: []string{"state"}},
