@@ -53,14 +53,15 @@ type BacklightSettings struct {
 }
 
 type TargetTypeSettings struct {
-	TargetType        string  `json:"target_type"`
-	TargetMode        string  `json:"target_mode,omitempty"`
-	DisplayWidth      int     `json:"display_width,omitempty"`
-	DisplayHeight     int     `json:"display_height,omitempty"`
-	DisplayAspect     float64 `json:"display_aspect,omitempty"`
-	Source            string  `json:"source,omitempty"`
-	LastSeenUnixMilli int64   `json:"last_seen_unix_milli,omitempty"`
-	Fresh             bool    `json:"fresh"`
+	TargetType         string   `json:"target_type"`
+	PreferredMouseMode string   `json:"preferred_mouse_mode,omitempty"`
+	DisplayWidth       int      `json:"display_width,omitempty"`
+	DisplayHeight      int      `json:"display_height,omitempty"`
+	DisplayAspect      float64  `json:"display_aspect,omitempty"`
+	Evidence           []string `json:"evidence,omitempty"`
+	Source             string   `json:"source,omitempty"`
+	LastSeenUnixMilli  int64    `json:"last_seen_unix_milli,omitempty"`
+	Fresh              bool     `json:"fresh"`
 }
 
 func writeJSONRPCResponse(response JSONRPCResponse, session *Session) {
@@ -243,12 +244,14 @@ func rpcGetEDID() (string, error) {
 }
 
 func rpcSetEDID(edid string) error {
+	edidToApply := edid
 	if edid == "" {
 		logger.Info().Msg("Restoring EDID to default")
+		edidToApply = getDeviceDefaultEDID()
 	} else {
 		logger.Info().Str("edid", edid).Msg("Setting EDID")
 	}
-	err := nativeInstance.VideoSetEDID(edid)
+	err := nativeInstance.VideoSetEDID(edidToApply)
 	if err != nil {
 		return err
 	}
@@ -341,14 +344,15 @@ func rpcGetBacklightSettings() (*BacklightSettings, error) {
 func rpcGetTargetType() (*TargetTypeSettings, error) {
 	metadata := getEffectiveTargetMetadata()
 	return &TargetTypeSettings{
-		TargetType:        metadata.TargetType,
-		TargetMode:        metadata.TargetMode,
-		DisplayWidth:      metadata.DisplayWidth,
-		DisplayHeight:     metadata.DisplayHeight,
-		DisplayAspect:     metadata.DisplayAspect,
-		Source:            metadata.Source,
-		LastSeenUnixMilli: metadata.LastSeenUnixMilli,
-		Fresh:             metadata.Fresh,
+		TargetType:         metadata.TargetType,
+		PreferredMouseMode: metadata.PreferredMouseMode,
+		DisplayWidth:       metadata.DisplayWidth,
+		DisplayHeight:      metadata.DisplayHeight,
+		DisplayAspect:      metadata.DisplayAspect,
+		Evidence:           metadata.Evidence,
+		Source:             metadata.Source,
+		LastSeenUnixMilli:  metadata.LastSeenUnixMilli,
+		Fresh:              metadata.Fresh,
 	}, nil
 }
 
