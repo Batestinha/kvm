@@ -34,6 +34,7 @@ func initNative(systemVersion *semver.Version, appVersion *semver.Version) {
 		MaxRestartAttempts:   config.NativeMaxRestart,
 		OnNativeRestart: func() {
 			configureDisplayOnNativeRestart()
+			go applyDisplayModeForTarget(getEffectiveTargetMetadata())
 		},
 		OnVideoStateChange: func(state native.VideoState) {
 			lastVideoState = state
@@ -101,6 +102,7 @@ func initNative(systemVersion *semver.Version, appVersion *semver.Version) {
 		if err := nativeInstance.VideoSetEDID(config.EdidString); err != nil {
 			nativeLogger.Warn().Err(err).Msg("error setting EDID")
 		}
+		applyDisplayModeForTarget(getEffectiveTargetMetadata())
 	}()
 
 	if os.Getenv("JETKVM_CRASH_TESTING") == "1" {
