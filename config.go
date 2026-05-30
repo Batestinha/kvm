@@ -251,6 +251,9 @@ func getDeviceDefaultEDID() string {
 				edid[i+5+j] = 0x20
 			}
 			copy(edid[i+5:i+18], nameBytes)
+			if len(nameBytes) < 13 {
+				edid[i+5+len(nameBytes)] = 0x0a
+			}
 			break
 		}
 	}
@@ -390,7 +393,7 @@ func LoadConfig() {
 	// Migrate old default EDID (Toshiba TSB, no CEA extension) to new JetKVM v1 EDID
 	const oldDefaultEDID = "00ffffffffffff0052620188008888881c150103800000780a0dc9a05747982712484c00000001010101010101010101010101010101023a801871382d40582c4500c48e2100001e011d007251d01e206e285500c48e2100001e000000fc00543734392d6648443732300a20000000fd00147801ff1d000a202020202020017b"
 	const jetKVM720pDefaultEDID = "00ffffffffffff0028b402000100000030230103801009780a0dc9a05747982712484c00010101010101010101010101010101010101011d007251d01e206e285500a05a0000001e000000fd00323c1e4b08000a202020202020000000fc004a65744b564d20373230700a20000000ff0044454255473732300a2020202000a9"
-	if loadedConfig.EdidString == "" || loadedConfig.EdidString == oldDefaultEDID || loadedConfig.EdidString == native.DefaultEDID || loadedConfig.EdidString == jetKVM720pDefaultEDID {
+	if loadedConfig.EdidString == "" || loadedConfig.EdidString == oldDefaultEDID || loadedConfig.EdidString == jetKVM720pDefaultEDID {
 		loadedConfig.EdidString = getDeviceDefaultEDID()
 	}
 

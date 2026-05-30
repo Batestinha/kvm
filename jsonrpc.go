@@ -264,8 +264,8 @@ func rpcSetEDID(edid string) error {
 	dynamicDisplayModeState.edid = ""
 	dynamicDisplayModeState.Unlock()
 
-	// Save EDID to config, allowing it to be restored on reboot.
-	config.EdidString = edid
+	// Save the applied EDID to config, allowing it to be restored on reboot.
+	config.EdidString = edidToApply
 	_ = SaveConfig()
 	return nil
 }
