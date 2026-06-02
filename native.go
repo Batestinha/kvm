@@ -99,8 +99,10 @@ func initNative(systemVersion *semver.Version, appVersion *semver.Version) {
 		nativeLogger.Fatal().Err(err).Msg("failed to start native proxy")
 	}
 	go func() {
-		if err := nativeInstance.VideoSetEDID(config.EdidString); err != nil {
-			nativeLogger.Warn().Err(err).Msg("error setting EDID")
+		if !restoreDefaultEDIDIfAndroidModeIsUnleased("android display mode unleased at startup", true) {
+			if err := nativeInstance.VideoSetEDID(config.EdidString); err != nil {
+				nativeLogger.Warn().Err(err).Msg("error setting EDID")
+			}
 		}
 		applyDisplayModeForTarget(getEffectiveTargetMetadata())
 	}()
