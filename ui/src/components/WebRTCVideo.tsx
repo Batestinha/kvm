@@ -11,6 +11,7 @@ import { useRTCStore, useSettingsStore, useUiStore, useVideoStore } from "@hooks
 import VirtualKeyboard from "@components/VirtualKeyboard";
 import Actionbar from "@components/ActionBar";
 import AndroidCompactControls from "@components/AndroidCompactControls";
+import CredentialPromptOverlay from "@components/CredentialPromptOverlay";
 
 import MacroBar from "@components/MacroBar";
 import InfoBar from "@components/InfoBar";
@@ -943,6 +944,7 @@ export default function WebRTCVideo({
           </div>
         </div>
       </div>
+      <CredentialPromptOverlay enableControllerOsk={!!compactControllerMode} />
       {compactControllerMode && <AndroidCompactControls />}
       {!hideStatusBar && !compactControllerMode && (
         <div>

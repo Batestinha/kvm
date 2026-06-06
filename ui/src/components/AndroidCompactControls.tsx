@@ -43,28 +43,8 @@ type Position = {
   y: number;
 };
 
-type CompanionCredentialStatus = {
-  keyguard_auth_state?: string;
-};
-
-type CompanionStatusResponse = {
-  companions?: CompanionCredentialStatus[];
-};
-
-declare global {
-  interface Window {
-    JetKVMAndroid?: {
-      hideKeyboard?: () => void;
-      showInputMethod?: () => void;
-    };
-  }
-}
-
 const STORAGE_KEY = "androidCompactControlPosition";
-const CREDENTIAL_PROMPT_STORAGE_KEY = "androidCredentialPromptPosition";
 const BUTTON_SIZE = 50;
-const CREDENTIAL_PROMPT_WIDTH = 188;
-const CREDENTIAL_PROMPT_HEIGHT = 48;
 const EDGE_PADDING = 10;
 const PANEL_WIDTH = 320;
 const PANEL_MAX_HEIGHT_MARGIN = 20;
@@ -89,28 +69,6 @@ const clampPosition = (position: Position): Position => {
   };
 };
 
-const getDefaultCredentialPromptPosition = (): Position => {
-  if (typeof window === "undefined") return { x: EDGE_PADDING, y: EDGE_PADDING };
-
-  return {
-    x: Math.max(EDGE_PADDING, Math.round((window.innerWidth - CREDENTIAL_PROMPT_WIDTH) / 2)),
-    y: Math.max(EDGE_PADDING, Math.round(window.innerHeight * 0.2)),
-  };
-};
-
-const clampCredentialPromptPosition = (position: Position): Position => {
-  if (typeof window === "undefined") return position;
-
-  return {
-    x: clamp(position.x, EDGE_PADDING, window.innerWidth - CREDENTIAL_PROMPT_WIDTH - EDGE_PADDING),
-    y: clamp(
-      position.y,
-      EDGE_PADDING,
-      window.innerHeight - CREDENTIAL_PROMPT_HEIGHT - EDGE_PADDING,
-    ),
-  };
-};
-
 const getStoredPosition = (): Position => {
   if (typeof window === "undefined") return { x: EDGE_PADDING, y: EDGE_PADDING };
 
@@ -126,23 +84,6 @@ const getStoredPosition = (): Position => {
   }
 
   return getDefaultPosition();
-};
-
-const getStoredCredentialPromptPosition = (): Position => {
-  if (typeof window === "undefined") return { x: EDGE_PADDING, y: EDGE_PADDING };
-
-  try {
-    const parsed = JSON.parse(
-      window.localStorage.getItem(CREDENTIAL_PROMPT_STORAGE_KEY) || "null",
-    ) as Position | null;
-    if (parsed && Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) {
-      return clampCredentialPromptPosition(parsed);
-    }
-  } catch {
-    window.localStorage.removeItem(CREDENTIAL_PROMPT_STORAGE_KEY);
-  }
-
-  return getDefaultCredentialPromptPosition();
 };
 
 function ActionButton({
@@ -211,14 +152,9 @@ export default function AndroidCompactControls() {
   const [position, setPosition] = useState<Position>(() => getStoredPosition());
   const [open, setOpen] = useState(false);
   const [requestCenterOpen, setRequestCenterOpen] = useState(false);
-  const [credentialPromptActive, setCredentialPromptActive] = useState(false);
-  const [credentialPromptPosition, setCredentialPromptPosition] = useState<Position>(() =>
-    getStoredCredentialPromptPosition(),
-  );
   const [panel, setPanel] = useState<Panel>("root");
   const [companionRequestCount, setCompanionRequestCount] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const credentialPromptWasActiveRef = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     moved: boolean;
@@ -228,22 +164,11 @@ export default function AndroidCompactControls() {
     startX: number;
     startY: number;
   } | null>(null);
-  const credentialPromptDragRef = useRef<{
-    offsetX: number;
-    offsetY: number;
-    pointerId: number;
-  } | null>(null);
 
   const persistPosition = useCallback((next: Position) => {
     const clamped = clampPosition(next);
     setPosition(clamped);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(clamped));
-  }, []);
-
-  const persistCredentialPromptPosition = useCallback((next: Position) => {
-    const clamped = clampCredentialPromptPosition(next);
-    setCredentialPromptPosition(clamped);
-    window.localStorage.setItem(CREDENTIAL_PROMPT_STORAGE_KEY, JSON.stringify(clamped));
   }, []);
 
   const closePanel = useCallback(() => {
@@ -332,42 +257,6 @@ export default function AndroidCompactControls() {
   }, [persistPosition, position]);
 
   useEffect(() => {
-    const onResize = () => persistCredentialPromptPosition(credentialPromptPosition);
-    window.addEventListener("orientationchange", onResize);
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("orientationchange", onResize);
-      window.removeEventListener("resize", onResize);
-    };
-  }, [credentialPromptPosition, persistCredentialPromptPosition]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const refreshCredentialPrompt = async () => {
-      try {
-        const resp = await api.GET(`${DEVICE_API}/companion/status`);
-        if (!resp.ok) return;
-
-        const body = (await resp.json()) as CompanionStatusResponse;
-        const active = (body.companions || []).some(
-          companion => companion.keyguard_auth_state === "credential_entry_requested",
-        );
-        if (!cancelled) setCredentialPromptActive(active);
-      } catch {
-        // The hidden request center handles general companion status failures.
-      }
-    };
-
-    void refreshCredentialPrompt();
-    const id = window.setInterval(() => void refreshCredentialPrompt(), 500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!open) return;
 
     const onPointerDown = (event: PointerEvent) => {
@@ -384,16 +273,6 @@ export default function AndroidCompactControls() {
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [closePanel, open]);
-
-  useEffect(() => {
-    if (credentialPromptActive) {
-      credentialPromptWasActiveRef.current = true;
-      window.JetKVMAndroid?.showInputMethod?.();
-    } else if (credentialPromptWasActiveRef.current) {
-      credentialPromptWasActiveRef.current = false;
-      window.JetKVMAndroid?.hideKeyboard?.();
-    }
-  }, [credentialPromptActive]);
 
   const panelStyle = useMemo(() => {
     if (typeof window === "undefined")
@@ -451,34 +330,6 @@ export default function AndroidCompactControls() {
     } else {
       openRootPanel();
     }
-  };
-
-  const startCredentialPromptDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    credentialPromptDragRef.current = {
-      offsetX: event.clientX - credentialPromptPosition.x,
-      offsetY: event.clientY - credentialPromptPosition.y,
-      pointerId: event.pointerId,
-    };
-  };
-
-  const moveCredentialPromptDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = credentialPromptDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-
-    persistCredentialPromptPosition({
-      x: event.clientX - drag.offsetX,
-      y: event.clientY - drag.offsetY,
-    });
-  };
-
-  const finishCredentialPromptDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = credentialPromptDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-
-    credentialPromptDragRef.current = null;
-    event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const toggleDisplay = useCallback(() => {
@@ -652,29 +503,6 @@ export default function AndroidCompactControls() {
           ) : (
             <ExtensionPopover />
           )}
-        </div>
-      )}
-      {credentialPromptActive && (
-        <div
-          role="status"
-          className={cx(
-            "fixed z-[60] flex touch-none items-center justify-center rounded-md select-none",
-            "bg-black/50 px-4 text-center text-base font-semibold text-white shadow-xl",
-          )}
-          style={{
-            height: CREDENTIAL_PROMPT_HEIGHT,
-            left: credentialPromptPosition.x,
-            top: credentialPromptPosition.y,
-            width: CREDENTIAL_PROMPT_WIDTH,
-          }}
-          onPointerCancel={() => {
-            credentialPromptDragRef.current = null;
-          }}
-          onPointerDown={startCredentialPromptDrag}
-          onPointerMove={moveCredentialPromptDrag}
-          onPointerUp={finishCredentialPromptDrag}
-        >
-          Enter credentials
         </div>
       )}
       <CompanionRequestCenter
