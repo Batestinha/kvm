@@ -5,6 +5,7 @@ import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.hardware.display.DisplayManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -22,6 +23,7 @@ public class DismissActivity extends Activity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private KeyguardManager keyguardManager;
+    private DisplayManager displayManager;
     private boolean dismissInFlight;
     private boolean dismissScheduled;
     private final Runnable finishTimeout = new Runnable() {
@@ -43,6 +45,7 @@ public class DismissActivity extends Activity {
         setContentView(root);
 
         keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
         scheduleDismiss("onCreate");
     }
 
@@ -124,9 +127,28 @@ public class DismissActivity extends Activity {
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                reportKeyguardAuthState(CompanionService.AUTH_CREDENTIAL_ENTRY_REQUESTED);
+                reportCredentialEntryStateAfterDelay();
             }
         }, REPORT_CREDENTIAL_ENTRY_DELAY_MS);
+    }
+
+    private void reportCredentialEntryStateAfterDelay() {
+        if (keyguardManager == null) return;
+
+        boolean keyguardLocked = keyguardManager.isKeyguardLocked();
+        boolean displayOn = CompanionService.isJetKvmExternalDisplayOn(displayManager);
+        Log.i(CompanionService.TAG, "credential report checkpoint keyguardLocked="
+                + keyguardLocked + " displayOn=" + displayOn);
+
+        if (!keyguardLocked && displayOn) {
+            reportKeyguardAuthState(CompanionService.AUTH_CREDENTIAL_ENTRY_SUCCEEDED);
+            return;
+        }
+        if (!displayOn) {
+            reportKeyguardAuthState(CompanionService.AUTH_CREDENTIAL_ENTRY_FAILED);
+            return;
+        }
+        reportKeyguardAuthState(CompanionService.AUTH_CREDENTIAL_ENTRY_REQUESTED);
     }
 
     private void logState(String label) {

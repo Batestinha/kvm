@@ -1074,6 +1074,30 @@ public class CompanionService extends Service implements InputManager.InputDevic
         return null;
     }
 
+    static boolean isJetKvmExternalDisplayOn(DisplayManager displayManager) {
+        Display display = findJetKvmPresentationDisplayStatic(displayManager);
+        return display != null && display.getState() != Display.STATE_OFF;
+    }
+
+    private static Display findJetKvmPresentationDisplayStatic(DisplayManager displayManager) {
+        if (displayManager == null) return null;
+
+        Display[] presentationDisplays = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
+        for (Display display : presentationDisplays) {
+            if (isJetKvmExternalDisplayStatic(display)) {
+                return display;
+            }
+        }
+
+        Display[] displays = displayManager.getDisplays();
+        for (Display display : displays) {
+            if (isJetKvmExternalDisplayStatic(display)) {
+                return display;
+            }
+        }
+        return null;
+    }
+
     private boolean isJetKvmExternalDisplay(Display display) {
         return isJetKvmExternalDisplayStatic(
             display,
