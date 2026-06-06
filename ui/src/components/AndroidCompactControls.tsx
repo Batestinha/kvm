@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, PointerEvent as ReactPointerEvent } from "react";
-import { MdOutlineContentPasteGo } from "react-icons/md";
+import { MdAndroid, MdOutlineContentPasteGo } from "react-icons/md";
 import {
   LuCable,
-  LuBell,
   LuCommand,
   LuHardDrive,
   LuKeyboard,
@@ -97,11 +96,13 @@ const getStoredPosition = (): Position => {
 
 function ActionButton({
   active,
+  badgeCount = 0,
   icon: Icon,
   label,
   onClick,
 }: {
   active?: boolean;
+  badgeCount?: number;
   icon: ComponentType<{ className?: string }>;
   label: string;
   onClick: () => void;
@@ -117,8 +118,25 @@ function ActionButton({
       onClick={onClick}
     >
       <Icon className="h-5 w-5 shrink-0" />
-      <span className="min-w-0 truncate">{label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <RequestCountBadge count={badgeCount} />
     </button>
+  );
+}
+
+function RequestCountBadge({ className, count }: { className?: string; count: number }) {
+  if (count <= 0) return null;
+
+  return (
+    <span
+      className={cx(
+        "flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5",
+        "text-[11px] font-semibold leading-none text-white",
+        className,
+      )}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }
 
@@ -143,6 +161,7 @@ export default function AndroidCompactControls() {
   const [open, setOpen] = useState(false);
   const [requestCenterOpen, setRequestCenterOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>("root");
+  const [companionRequestCount, setCompanionRequestCount] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -359,6 +378,10 @@ export default function AndroidCompactControls() {
         onPointerUp={finishDrag}
       >
         {open ? <LuX className="h-7 w-7" /> : <LuMenu className="h-7 w-7" />}
+        <RequestCountBadge
+          count={companionRequestCount}
+          className="absolute -right-1 -top-1 border border-slate-950/40"
+        />
       </button>
 
       {open && (
@@ -469,8 +492,9 @@ export default function AndroidCompactControls() {
                 }}
               />
               <ActionButton
-                icon={LuBell}
-                label="Requests"
+                badgeCount={companionRequestCount}
+                icon={MdAndroid}
+                label="Android Requests"
                 onClick={() => {
                   closePanel();
                   setRequestCenterOpen(true);
@@ -494,6 +518,7 @@ export default function AndroidCompactControls() {
         forceOpen={requestCenterOpen}
         hideTrigger
         onClose={() => setRequestCenterOpen(false)}
+        onRequestCountChange={setCompanionRequestCount}
       />
     </>
   );

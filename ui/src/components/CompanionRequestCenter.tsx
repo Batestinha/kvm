@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { LuBell, LuChevronDown, LuChevronRight, LuRefreshCw, LuX } from "react-icons/lu";
+import { MdAndroid } from "react-icons/md";
+import { LuChevronDown, LuChevronRight, LuRefreshCw, LuX } from "react-icons/lu";
 
 import api from "@/api";
 import { DEVICE_API } from "@/ui.config";
@@ -83,18 +84,23 @@ const PAIRED_SECTION_STORAGE_KEY = "jetkvm.companion.pairedCollapsed";
 const VISIBLE_IPS_SECTION_STORAGE_KEY = "jetkvm.companion.visibleIpsCollapsed";
 const PAIRING_CODE_TTL_MS = 120_000;
 
+const countCompanionRequests = (requests: CompanionPairRequest[]) =>
+  requests.filter(request => request.direction !== "jetkvm").length;
+
 export default function CompanionRequestCenter({
   compact = false,
   forceOpen,
   hideTrigger = false,
   onOpen,
   onClose,
+  onRequestCountChange,
 }: {
   compact?: boolean;
   forceOpen?: boolean;
   hideTrigger?: boolean;
   onOpen?: () => void;
   onClose?: () => void;
+  onRequestCountChange?: (count: number) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -311,8 +317,12 @@ export default function CompanionRequestCenter({
     : 0;
   const showInitiatedFallback =
     activeJetkvmRequests.length === 0 && !!initiatedOtp && initiatedRemainingMs > 0;
-  const count = companionRequests.length;
+  const count = countCompanionRequests(requests);
   const isOpen = forceOpen ?? open;
+
+  useEffect(() => {
+    onRequestCountChange?.(count);
+  }, [count, onRequestCountChange]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -334,6 +344,7 @@ export default function CompanionRequestCenter({
       {!hideTrigger && (
         <button
           type="button"
+          aria-label="Android Requests"
           className={cx(
             compact
               ? "flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-white hover:bg-white/15 active:bg-white/25"
@@ -341,8 +352,10 @@ export default function CompanionRequestCenter({
           )}
           onClick={openPanel}
         >
-          <LuBell className="h-5 w-5 shrink-0" />
-          {compact && <span className="min-w-0 truncate">Companion</span>}
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#3ddc84]">
+            <MdAndroid className="h-4 w-4 text-white" />
+          </span>
+          {compact && <span className="min-w-0 truncate">Android Requests</span>}
           {count > 0 && (
             <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">
               {count}
