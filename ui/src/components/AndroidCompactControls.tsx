@@ -43,6 +43,14 @@ type Position = {
   y: number;
 };
 
+type CompanionCredentialStatus = {
+  keyguard_auth_state?: string;
+};
+
+type CompanionStatusResponse = {
+  companions?: CompanionCredentialStatus[];
+};
+
 declare global {
   interface Window {
     JetKVMAndroid?: {
@@ -330,6 +338,32 @@ export default function AndroidCompactControls() {
       window.removeEventListener("resize", onResize);
     };
   }, [credentialPromptPosition, persistCredentialPromptPosition]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshCredentialPrompt = async () => {
+      try {
+        const resp = await api.GET(`${DEVICE_API}/companion/status`);
+        if (!resp.ok) return;
+
+        const body = (await resp.json()) as CompanionStatusResponse;
+        const active = (body.companions || []).some(
+          companion => companion.keyguard_auth_state === "credential_entry_requested",
+        );
+        if (!cancelled) setCredentialPromptActive(active);
+      } catch {
+        // The hidden request center handles general companion status failures.
+      }
+    };
+
+    void refreshCredentialPrompt();
+    const id = window.setInterval(() => void refreshCredentialPrompt(), 500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -635,7 +669,6 @@ export default function AndroidCompactControls() {
         compact
         forceOpen={requestCenterOpen}
         hideTrigger
-        onCredentialPromptActiveChange={setCredentialPromptActive}
         onClose={() => setRequestCenterOpen(false)}
         onRequestCountChange={setCompanionRequestCount}
       />

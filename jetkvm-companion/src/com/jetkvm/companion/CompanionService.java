@@ -997,6 +997,14 @@ public class CompanionService extends Service implements InputManager.InputDevic
     }
 
     private void pulseTargetPresentation(String reason) {
+        showTargetPresentation(reason, TARGET_PRESENTATION_PULSE_MS);
+    }
+
+    private void holdTargetPresentation(String reason) {
+        showTargetPresentation(reason, 0);
+    }
+
+    private void showTargetPresentation(String reason, long pulseMs) {
         Display display = findJetKvmPresentationDisplay(reason);
         if (display == null) {
             dismissTargetPresentation("noJetKvmDisplay:" + reason);
@@ -1004,15 +1012,30 @@ public class CompanionService extends Service implements InputManager.InputDevic
         }
 
         int displayId = display.getDisplayId();
+        if (targetPresentation != null && targetPresentationDisplayId == displayId) {
+            handler.removeCallbacks(dismissTargetPresentationRunnable);
+            if (pulseMs > 0) {
+                handler.postDelayed(dismissTargetPresentationRunnable, pulseMs);
+                Log.i(TAG, "target presentation pulse extended reason=" + reason
+                    + " durationMs=" + pulseMs + " " + describeDisplay(display));
+            } else {
+                Log.i(TAG, "target presentation held reason=" + reason + " " + describeDisplay(display));
+            }
+            return;
+        }
         dismissTargetPresentation("replace:" + reason);
         try {
             targetPresentation = new TargetPresentation(this, display);
             targetPresentation.show();
             targetPresentationDisplayId = displayId;
             handler.removeCallbacks(dismissTargetPresentationRunnable);
-            handler.postDelayed(dismissTargetPresentationRunnable, TARGET_PRESENTATION_PULSE_MS);
-            Log.i(TAG, "target presentation pulse shown reason=" + reason
-                + " durationMs=" + TARGET_PRESENTATION_PULSE_MS + " " + describeDisplay(display));
+            if (pulseMs > 0) {
+                handler.postDelayed(dismissTargetPresentationRunnable, pulseMs);
+                Log.i(TAG, "target presentation pulse shown reason=" + reason
+                    + " durationMs=" + pulseMs + " " + describeDisplay(display));
+            } else {
+                Log.i(TAG, "target presentation held reason=" + reason + " " + describeDisplay(display));
+            }
         } catch (WindowManager.InvalidDisplayException e) {
             targetPresentation = null;
             targetPresentationDisplayId = -1;
@@ -1136,6 +1159,7 @@ public class CompanionService extends Service implements InputManager.InputDevic
         if (AUTH_CREDENTIAL_ENTRY_REQUESTED.equals(state)) {
             activeKeyguardAuthSession = UUID.randomUUID().toString();
             keyguardAuthWatchDeadlineMs = System.currentTimeMillis() + KEYGUARD_AUTH_WATCH_TIMEOUT_MS;
+            holdTargetPresentation("keyguardAuth");
             reportKeyguardAuthStateAsync(AUTH_CREDENTIAL_ENTRY_REQUESTED, activeKeyguardAuthSession);
             handler.removeCallbacks(keyguardAuthWatchRunnable);
             handler.postDelayed(keyguardAuthWatchRunnable, KEYGUARD_AUTH_WATCH_INTERVAL_MS);
@@ -1165,6 +1189,7 @@ public class CompanionService extends Service implements InputManager.InputDevic
     private void finishKeyguardAuthWatch(String state) {
         String session = activeKeyguardAuthSession;
         stopKeyguardAuthWatch();
+        dismissTargetPresentation("keyguardAuthComplete:" + state);
         reportKeyguardAuthStateAsync(state, session);
     }
 
