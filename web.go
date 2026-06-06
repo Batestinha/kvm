@@ -402,7 +402,12 @@ func handleCompanionTargetDeclaration(c *gin.Context) {
 	metadata := setCompanionTargetMetadata(declaration)
 	applyDisplayModeForTarget(metadata)
 	metadata = withDisplayReconnectStatus(metadata)
-	rememberCompanionStatus(companionID, c.ClientIP(), "https://"+c.Request.Host, declaration)
+	companionUnpaired := rememberCompanionStatus(companionID, c.ClientIP(), declaration)
+	if companionUnpaired {
+		_ = SaveConfig()
+		c.JSON(http.StatusOK, gin.H{"paired": false})
+		return
+	}
 	pendingActions := takeCompanionPendingActions(companionID)
 	logger.Info().
 		Str("companion_id", companionID).
@@ -987,11 +992,21 @@ func removeCompanionAuthorization(companionID string) {
 	}
 }
 
-func rememberCompanionStatus(companionID string, remoteAddr string, jetkvmURL string, declaration CompanionTargetDeclaration) {
+func rememberCompanionStatus(companionID string, remoteAddr string, declaration CompanionTargetDeclaration) bool {
 	companionID = strings.TrimSpace(companionID)
 	if companionID == "" {
-		return
+		return false
 	}
+	pairedJetKVMURLs := cleanStringList(declaration.PairedJetKVMURLs)
+	if declaration.State == "connected" && len(pairedJetKVMURLs) == 0 {
+		removeCompanionAuthorization(companionID)
+		forgetCompanionStatus(companionID)
+		logger.Info().
+			Str("companion_id", companionID).
+			Msg("companion reported no paired JetKVM URLs; removed companion authorization")
+		return true
+	}
+
 	peripherals := map[string]bool{}
 	for _, evidence := range declaration.Evidence {
 		switch strings.ToLower(strings.TrimSpace(evidence)) {
@@ -999,11 +1014,6 @@ func rememberCompanionStatus(companionID string, remoteAddr string, jetkvmURL st
 			peripherals[strings.ToLower(strings.TrimSpace(evidence))] = true
 		}
 	}
-	pairedJetKVMURLs := cleanStringList(declaration.PairedJetKVMURLs)
-	if len(pairedJetKVMURLs) == 0 {
-		pairedJetKVMURLs = cleanStringList([]string{jetkvmURL})
-	}
-
 	status := companionStatusSnapshot{
 		CompanionID:                      companionID,
 		RemoteAddr:                       remoteAddr,
@@ -1046,6 +1056,7 @@ func rememberCompanionStatus(companionID string, remoteAddr string, jetkvmURL st
 	}
 	companionStatuses[companionID] = status
 	companionStatusLock.Unlock()
+	return false
 }
 
 func isValidKeyguardAuthState(state string) bool {
