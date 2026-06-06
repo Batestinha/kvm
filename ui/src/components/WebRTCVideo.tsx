@@ -935,6 +935,7 @@ export default function WebRTCVideo({
                           </div>
                         </div>
                       )}
+                      <CredentialPromptOverlay />
                     </div>
                   </div>
                   <VirtualKeyboard />
@@ -944,7 +945,6 @@ export default function WebRTCVideo({
           </div>
         </div>
       </div>
-      <CredentialPromptOverlay />
       {compactControllerMode && <AndroidCompactControls />}
       {!hideStatusBar && !compactControllerMode && (
         <div>
