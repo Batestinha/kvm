@@ -944,7 +944,7 @@ export default function WebRTCVideo({
           </div>
         </div>
       </div>
-      <CredentialPromptOverlay enableControllerOsk={!!compactControllerMode} />
+      <CredentialPromptOverlay />
       {compactControllerMode && <AndroidCompactControls />}
       {!hideStatusBar && !compactControllerMode && (
         <div>
