@@ -35,7 +35,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -53,7 +52,6 @@ public class MainActivity extends Activity {
     private static final String PREFS = "jetkvm_android";
     private static final String KEY_URL = "controllerUrl";
     private static final String KEY_HOST = "controllerHost";
-    private static final String KEY_STAY_LOGGED_IN = "stayLoggedIn";
     private static final String DEFAULT_HOST = "jetkvm.local";
     private static final int JETKVM_BLUE_700 = Color.rgb(20, 71, 230);
     private static final long WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L;
@@ -63,7 +61,6 @@ public class MainActivity extends Activity {
     private EditText imeInput;
     private EditText hostInput;
     private EditText passwordInput;
-    private CheckBox stayLoggedInInput;
     private Button loginButton;
     private TextView statusText;
     private ProgressBar progressBar;
@@ -216,15 +213,6 @@ public class MainActivity extends Activity {
         enableAutofill(passwordInput, View.AUTOFILL_HINT_PASSWORD);
         form.addView(passwordInput, fieldLayoutParams());
 
-        stayLoggedInInput = new CheckBox(this);
-        stayLoggedInInput.setText("Stay logged in");
-        stayLoggedInInput.setTextColor(Color.WHITE);
-        stayLoggedInInput.setChecked(true);
-        form.addView(stayLoggedInInput, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ));
-
         loginButton = new Button(this);
         loginButton.setText("Log in");
         loginButton.setAllCaps(false);
@@ -234,8 +222,7 @@ public class MainActivity extends Activity {
             public void onClick(View v) {
                 submitNativeLogin(
                     hostInput.getText().toString(),
-                    passwordInput.getText().toString(),
-                    stayLoggedInInput.isChecked()
+                    passwordInput.getText().toString()
                 );
             }
         });
@@ -520,7 +507,7 @@ public class MainActivity extends Activity {
         return url;
     }
 
-    private void submitNativeLogin(final String controllerHost, final String password, final boolean stayLoggedIn) {
+    private void submitNativeLogin(final String controllerHost, final String password) {
         final String host = hostFromUrlOrHost(controllerHost);
         final String controllerUrl = buildControllerUrl(host);
         prefs.edit()
@@ -543,8 +530,7 @@ public class MainActivity extends Activity {
                     conn.setDoOutput(true);
                     conn.setRequestProperty("Content-Type", "application/json");
 
-                    String body = "{\"password\":\"" + jsonEscape(password) + "\",\"stayLoggedIn\":"
-                        + (stayLoggedIn ? "true" : "false") + "}";
+                    String body = "{\"password\":\"" + jsonEscape(password) + "\"}";
                     OutputStream out = conn.getOutputStream();
                     out.write(body.getBytes("UTF-8"));
                     out.close();
@@ -566,7 +552,6 @@ public class MainActivity extends Activity {
                     prefs.edit()
                         .putString(KEY_HOST, host)
                         .putString(KEY_URL, controllerUrl)
-                        .putBoolean(KEY_STAY_LOGGED_IN, stayLoggedIn)
                         .apply();
 
                     runOnUiThread(new Runnable() {
@@ -671,11 +656,6 @@ public class MainActivity extends Activity {
     }
 
     private final class JetKVMBridge {
-        @JavascriptInterface
-        public void setStayLoggedIn(boolean stayLoggedIn) {
-            prefs.edit().putBoolean(KEY_STAY_LOGGED_IN, stayLoggedIn).apply();
-        }
-
         @JavascriptInterface
         public void showNativeLogin(String url) {
             runOnUiThread(new Runnable() {
