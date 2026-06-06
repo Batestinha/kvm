@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Form, redirect, useActionData } from "react-router";
 import type { ActionFunction, ActionFunctionArgs, LoaderFunction } from "react-router";
 import { LuEye, LuEyeOff } from "react-icons/lu";
@@ -58,6 +58,13 @@ const action: ActionFunction = async ({ request }: ActionFunctionArgs) => {
 export default function LoginLocalRoute() {
   const actionData = useActionData() as { error?: string; success?: boolean };
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    const androidBridge = window.JetKVMAndroid as
+      | { showNativeLogin?: (url: string) => void }
+      | undefined;
+    androidBridge?.showNativeLogin?.(window.location.href);
+  }, []);
 
   return (
     <>

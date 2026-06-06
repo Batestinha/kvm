@@ -346,6 +346,14 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                if (isNativeLoginUrl(url)) {
+                    view.stopLoading();
+                    showLoginPanel("Session expired. Log in again.");
+                }
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 injectJetKVMHooks(view);
                 CookieManager.getInstance().flush();
@@ -414,9 +422,10 @@ public class MainActivity extends Activity {
     private boolean isNativeLoginUrl(String url) {
         if (url == null) return false;
         try {
-            return "/login-local".equals(new URL(url).getPath());
+            String path = new URL(url).getPath();
+            return "/login-local".equals(path) || "/login".equals(path);
         } catch (Exception ignored) {
-            return url.contains("/login-local");
+            return url.contains("/login-local") || url.contains("/login");
         }
     }
 
