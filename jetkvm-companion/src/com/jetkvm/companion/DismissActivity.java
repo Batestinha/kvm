@@ -18,6 +18,7 @@ public class DismissActivity extends Activity {
 
     private static final long DISMISS_DELAY_MS = 300;
     private static final long FINISH_TIMEOUT_MS = 2500;
+    private static final long REPORT_CREDENTIAL_ENTRY_DELAY_MS = 500;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private KeyguardManager keyguardManager;
@@ -95,7 +96,6 @@ public class DismissActivity extends Activity {
         }
 
         dismissInFlight = true;
-        reportKeyguardAuthState(CompanionService.AUTH_CREDENTIAL_ENTRY_REQUESTED);
         keyguardManager.requestDismissKeyguard(this, new KeyguardManager.KeyguardDismissCallback() {
             @Override
             public void onDismissError() {
@@ -121,6 +121,12 @@ public class DismissActivity extends Activity {
                 finishAndRemoveTask();
             }
         });
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                reportKeyguardAuthState(CompanionService.AUTH_CREDENTIAL_ENTRY_REQUESTED);
+            }
+        }, REPORT_CREDENTIAL_ENTRY_DELAY_MS);
     }
 
     private void logState(String label) {
@@ -130,9 +136,13 @@ public class DismissActivity extends Activity {
     }
 
     private void reportKeyguardAuthState(String state) {
-        Intent intent = new Intent(CompanionService.ACTION_KEYGUARD_AUTH_STATE);
-        intent.setPackage(getPackageName());
+        Intent intent = new Intent(this, CompanionService.class);
+        intent.setAction(CompanionService.ACTION_KEYGUARD_AUTH_STATE);
         intent.putExtra(CompanionService.EXTRA_KEYGUARD_AUTH_STATE, state);
-        sendBroadcast(intent);
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
     }
 }

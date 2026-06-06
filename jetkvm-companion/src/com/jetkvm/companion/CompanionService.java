@@ -272,6 +272,9 @@ public class CompanionService extends Service implements InputManager.InputDevic
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         saveJetKvmUrlFromIntent(intent);
+        if (intent != null && ACTION_KEYGUARD_AUTH_STATE.equals(intent.getAction())) {
+            handleKeyguardAuthState(intent.getStringExtra(EXTRA_KEYGUARD_AUTH_STATE));
+        }
         ensureLaunchAssistOverlay();
         updateJetKvmPeripheralState("startCommand");
         Log.i(TAG, "service onStartCommand");
