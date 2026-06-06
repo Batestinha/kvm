@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Presentation;
 import android.app.Service;
+import android.app.KeyguardManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -32,6 +33,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -95,6 +97,7 @@ public class CompanionService extends Service implements InputManager.InputDevic
     private static final long TARGET_REPORT_INTERVAL_MS = 15000;
     private static final long TARGET_LEASE_MS = 120000;
     private static final long TARGET_PRESENTATION_PULSE_MS = 750;
+    private static final long TARGET_PRESENTATION_LOCK_CHECK_MS = 250;
     private static final String JETKVM_INPUT_NAME_TOKEN = "jetkvm";
     private static final String JETKVM_DISPLAY_NAME_TOKEN = "jetkvm";
     private static final String JETKVM_SHORT_DISPLAY_NAME_TOKEN = "jkvm";
@@ -104,13 +107,26 @@ public class CompanionService extends Service implements InputManager.InputDevic
     private WindowManager windowManager;
     private DisplayManager displayManager;
     private InputManager inputManager;
+    private KeyguardManager keyguardManager;
     private View launchAssistOverlay;
     private TargetPresentation targetPresentation;
     private int targetPresentationDisplayId = -1;
+    private boolean targetPresentationAwaitingUnlock;
     private final Runnable dismissTargetPresentationRunnable = new Runnable() {
         @Override
         public void run() {
             dismissTargetPresentation("pulseComplete");
+        }
+    };
+    private final Runnable targetPresentationLockCheckRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!targetPresentationAwaitingUnlock || targetPresentation == null) return;
+            if (!isTargetKeyguardLocked()) {
+                dismissTargetPresentation("targetUnlocked");
+                return;
+            }
+            handler.postDelayed(this, TARGET_PRESENTATION_LOCK_CHECK_MS);
         }
     };
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -146,6 +162,7 @@ public class CompanionService extends Service implements InputManager.InputDevic
             Log.i(TAG, "screen receiver action=" + action);
             if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                 attemptedForCurrentScreen = false;
+                dismissTargetPresentation("screenOff");
                 if (jetkvmPeripheralsPresent) {
                     scheduleTargetReport();
                 }
@@ -218,6 +235,7 @@ public class CompanionService extends Service implements InputManager.InputDevic
         if (displayManager != null) {
             displayManager.registerDisplayListener(displayListener, handler);
         }
+        keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
         inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         if (inputManager != null) {
             inputManager.registerInputDeviceListener(this, handler);
@@ -936,15 +954,25 @@ public class CompanionService extends Service implements InputManager.InputDevic
         }
 
         int displayId = display.getDisplayId();
+        boolean keyguardLocked = isTargetKeyguardLocked();
         dismissTargetPresentation("replace:" + reason);
         try {
-            targetPresentation = new TargetPresentation(this, display);
+            targetPresentation = new TargetPresentation(this, display, keyguardLocked);
             targetPresentation.show();
             targetPresentationDisplayId = displayId;
             handler.removeCallbacks(dismissTargetPresentationRunnable);
-            handler.postDelayed(dismissTargetPresentationRunnable, TARGET_PRESENTATION_PULSE_MS);
+            handler.removeCallbacks(targetPresentationLockCheckRunnable);
+            if (keyguardLocked) {
+                targetPresentationAwaitingUnlock = true;
+                handler.postDelayed(targetPresentationLockCheckRunnable, TARGET_PRESENTATION_LOCK_CHECK_MS);
+            } else {
+                targetPresentationAwaitingUnlock = false;
+                handler.postDelayed(dismissTargetPresentationRunnable, TARGET_PRESENTATION_PULSE_MS);
+            }
             Log.i(TAG, "target presentation pulse shown reason=" + reason
-                + " durationMs=" + TARGET_PRESENTATION_PULSE_MS + " " + describeDisplay(display));
+                + " keyguardLocked=" + keyguardLocked
+                + " durationMs=" + (keyguardLocked ? -1 : TARGET_PRESENTATION_PULSE_MS)
+                + " " + describeDisplay(display));
         } catch (WindowManager.InvalidDisplayException e) {
             targetPresentation = null;
             targetPresentationDisplayId = -1;
@@ -954,6 +982,11 @@ public class CompanionService extends Service implements InputManager.InputDevic
             targetPresentationDisplayId = -1;
             Log.i(TAG, "target presentation failed reason=" + reason + ": " + e.getClass().getSimpleName());
         }
+    }
+
+    private boolean isTargetKeyguardLocked() {
+        if (keyguardManager == null) return false;
+        return keyguardManager.isKeyguardLocked() || keyguardManager.isDeviceLocked();
     }
 
     private Display findJetKvmPresentationDisplay(String reason) {
@@ -1030,6 +1063,8 @@ public class CompanionService extends Service implements InputManager.InputDevic
 
     private void dismissTargetPresentation(String reason) {
         handler.removeCallbacks(dismissTargetPresentationRunnable);
+        handler.removeCallbacks(targetPresentationLockCheckRunnable);
+        targetPresentationAwaitingUnlock = false;
         if (targetPresentation == null) return;
         try {
             targetPresentation.dismiss();
@@ -1347,8 +1382,11 @@ public class CompanionService extends Service implements InputManager.InputDevic
     }
 
     private static final class TargetPresentation extends Presentation {
-        TargetPresentation(Context context, Display display) {
+        private final boolean showCredentialsPrompt;
+
+        TargetPresentation(Context context, Display display, boolean showCredentialsPrompt) {
             super(context, display, R.style.TransparentPresentation);
+            this.showCredentialsPrompt = showCredentialsPrompt;
         }
 
         @Override
@@ -1356,13 +1394,30 @@ public class CompanionService extends Service implements InputManager.InputDevic
             super.onCreate(savedInstanceState);
             requestWindowFeature(Window.FEATURE_NO_TITLE);
 
-            View anchor = new View(getContext());
-            anchor.setAlpha(0.01f);
-            anchor.setKeepScreenOn(true);
             FrameLayout root = new FrameLayout(getContext());
             root.setBackgroundColor(Color.TRANSPARENT);
             root.setKeepScreenOn(true);
-            root.addView(anchor, new FrameLayout.LayoutParams(1, 1));
+            if (showCredentialsPrompt) {
+                TextView prompt = new TextView(getContext());
+                prompt.setText("Enter credentials");
+                prompt.setTextColor(Color.WHITE);
+                prompt.setTextSize(28);
+                prompt.setGravity(Gravity.CENTER);
+                prompt.setBackgroundColor(Color.argb(128, 0, 0, 0));
+                prompt.setPadding(32, 18, 32, 18);
+                prompt.setShadowLayer(6f, 0f, 2f, Color.BLACK);
+                FrameLayout.LayoutParams promptParams = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                );
+                promptParams.gravity = Gravity.CENTER;
+                root.addView(prompt, promptParams);
+            } else {
+                View anchor = new View(getContext());
+                anchor.setAlpha(0.01f);
+                anchor.setKeepScreenOn(true);
+                root.addView(anchor, new FrameLayout.LayoutParams(1, 1));
+            }
             setContentView(root);
 
             Window window = getWindow();
@@ -1384,7 +1439,14 @@ public class CompanionService extends Service implements InputManager.InputDevic
             super.onStart();
             Window window = getWindow();
             if (window != null) {
-                window.setLayout(1, 1);
+                if (showCredentialsPrompt) {
+                    window.setLayout(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.MATCH_PARENT
+                    );
+                } else {
+                    window.setLayout(1, 1);
+                }
             }
         }
     }
