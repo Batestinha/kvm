@@ -26,9 +26,11 @@ jobs:
           CODEBERG_MIRROR_SSH_KEY: ${{ secrets.CODEBERG_MIRROR_SSH_KEY }}
         run: |
           set -eu
+          test -n "$CODEBERG_MIRROR_SSH_KEY"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$CODEBERG_MIRROR_SSH_KEY" > ~/.ssh/codeberg_mirror
           chmod 600 ~/.ssh/codeberg_mirror
+          ssh-keygen -y -f ~/.ssh/codeberg_mirror > /dev/null
           ssh-keyscan -t ed25519 codeberg.org >> ~/.ssh/known_hosts
           cat > ~/.ssh/config <<'EOF'
           Host codeberg.org
@@ -38,8 +40,9 @@ jobs:
             IdentitiesOnly yes
           EOF
 
-      - name: Mirror all refs
+      - name: Mirror branches and tags
         run: |
           set -eu
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*' --prune --prune-tags
           git remote add codeberg ssh://git@codeberg.org/steadying/kvm.git
-          git push --mirror codeberg
+          git push --prune codeberg '+refs/remotes/origin/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
