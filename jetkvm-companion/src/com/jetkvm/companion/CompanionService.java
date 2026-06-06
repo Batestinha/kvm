@@ -104,6 +104,7 @@ public class CompanionService extends Service implements InputManager.InputDevic
     private static final long TARGET_PRESENTATION_PULSE_MS = 750;
     private static final long KEYGUARD_AUTH_WATCH_INTERVAL_MS = 500;
     private static final long KEYGUARD_AUTH_WATCH_TIMEOUT_MS = 120000;
+    private static final long KEYGUARD_AUTH_DISPLAY_OFF_GRACE_MS = 5000;
     private static final String JETKVM_INPUT_NAME_TOKEN = "jetkvm";
     private static final String JETKVM_DISPLAY_NAME_TOKEN = "jetkvm";
     private static final String JETKVM_SHORT_DISPLAY_NAME_TOKEN = "jkvm";
@@ -117,8 +118,6 @@ public class CompanionService extends Service implements InputManager.InputDevic
     private View launchAssistOverlay;
     private TargetPresentation targetPresentation;
     private int targetPresentationDisplayId = -1;
-    private String activeKeyguardAuthSession = "";
-    private long keyguardAuthWatchDeadlineMs;
     private final Runnable dismissTargetPresentationRunnable = new Runnable() {
         @Override
         public void run() {
@@ -133,6 +132,9 @@ public class CompanionService extends Service implements InputManager.InputDevic
     private boolean attemptedForCurrentScreen;
     private boolean targetReportScheduled;
     private String activeTargetIdentityToken = "";
+    private String activeKeyguardAuthSession = "";
+    private long keyguardAuthWatchDeadlineMs;
+    private long keyguardAuthWatchStartedMs;
     private volatile long targetDeclarationConfirmedUntilMs;
     private volatile boolean targetDeclarationHDMIReconnectRequired;
     private volatile String targetDeclarationCompanionNotice = "";
@@ -461,7 +463,12 @@ public class CompanionService extends Service implements InputManager.InputDevic
         final DisplayMetrics metrics = getResources().getDisplayMetrics();
         final int width = Math.min(metrics.widthPixels, metrics.heightPixels);
         final int height = Math.max(metrics.widthPixels, metrics.heightPixels);
-        if (width <= 0 || height <= 0 || jetkvmUrls.length == 0) return;
+        if (width <= 0 || height <= 0 || jetkvmUrls.length == 0) {
+            Log.i(TAG, "keyguard auth report skipped state=" + state
+                + " urls=" + jetkvmUrls.length + " width=" + width + " height=" + height);
+            return;
+        }
+        Log.i(TAG, "keyguard auth report state=" + state + " session=" + session);
 
         new Thread(new Runnable() {
             @Override
@@ -1158,7 +1165,8 @@ public class CompanionService extends Service implements InputManager.InputDevic
         }
         if (AUTH_CREDENTIAL_ENTRY_REQUESTED.equals(state)) {
             activeKeyguardAuthSession = UUID.randomUUID().toString();
-            keyguardAuthWatchDeadlineMs = System.currentTimeMillis() + KEYGUARD_AUTH_WATCH_TIMEOUT_MS;
+            keyguardAuthWatchStartedMs = System.currentTimeMillis();
+            keyguardAuthWatchDeadlineMs = keyguardAuthWatchStartedMs + KEYGUARD_AUTH_WATCH_TIMEOUT_MS;
             holdTargetPresentation("keyguardAuth");
             reportKeyguardAuthStateAsync(AUTH_CREDENTIAL_ENTRY_REQUESTED, activeKeyguardAuthSession);
             handler.removeCallbacks(keyguardAuthWatchRunnable);
@@ -1175,11 +1183,15 @@ public class CompanionService extends Service implements InputManager.InputDevic
             finishKeyguardAuthWatch(AUTH_CREDENTIAL_ENTRY_SUCCEEDED);
             return;
         }
-        if (locked && !displayOn) {
+        long now = System.currentTimeMillis();
+        boolean displayOffGraceElapsed =
+            keyguardAuthWatchStartedMs > 0
+                && now - keyguardAuthWatchStartedMs >= KEYGUARD_AUTH_DISPLAY_OFF_GRACE_MS;
+        if (locked && !displayOn && displayOffGraceElapsed) {
             finishKeyguardAuthWatch(AUTH_CREDENTIAL_ENTRY_FAILED);
             return;
         }
-        if (System.currentTimeMillis() >= keyguardAuthWatchDeadlineMs) {
+        if (now >= keyguardAuthWatchDeadlineMs) {
             finishKeyguardAuthWatch(AUTH_CREDENTIAL_ENTRY_FAILED);
             return;
         }
@@ -1196,6 +1208,7 @@ public class CompanionService extends Service implements InputManager.InputDevic
     private void stopKeyguardAuthWatch() {
         handler.removeCallbacks(keyguardAuthWatchRunnable);
         activeKeyguardAuthSession = "";
+        keyguardAuthWatchStartedMs = 0;
         keyguardAuthWatchDeadlineMs = 0;
     }
 

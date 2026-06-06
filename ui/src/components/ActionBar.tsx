@@ -328,7 +328,7 @@ export default function Actionbar({
               theme="light"
               text={m.action_bar_connection_stats()}
               LeadingIcon={({ className }) => (
-                <LuSignal className={cx(className, "mb-0.5 text-green-500")} strokeWidth={4} />
+                <LuSignal className={cx(className, "mb-0.5")} strokeWidth={4} />
               )}
               onClick={() => {
                 toggleSidebarView("connection-stats");
