@@ -21,10 +21,25 @@ const MAX_VISIBLE_DIGITS = 16;
 
 const digitButtons = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
+const digitFromKeyboardEvent = (event: KeyboardEvent) => {
+  if (/^[0-9]$/.test(event.key)) return event.key;
+  if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(-1);
+  if (/^Numpad[0-9]$/.test(event.code)) return event.code.slice(-1);
+  return null;
+};
+
 export default function CredentialPromptOverlay() {
   const [active, setActive] = useState(false);
   const [enteredDigits, setEnteredDigits] = useState("");
   const { executeMacro } = useKeyboard();
+
+  const mirrorDigit = useCallback((digit: string) => {
+    setEnteredDigits(value => `${value}${digit}`.slice(-MAX_VISIBLE_DIGITS));
+  }, []);
+
+  const mirrorBackspace = useCallback(() => {
+    setEnteredDigits(value => value.slice(0, -1));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +71,42 @@ export default function CredentialPromptOverlay() {
     if (!active) setEnteredDigits("");
   }, [active]);
 
+  useEffect(() => {
+    if (!active) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const digit = digitFromKeyboardEvent(event);
+      if (digit !== null) {
+        mirrorDigit(digit);
+        return;
+      }
+
+      if (event.key === "Backspace" || event.code === "Backspace") {
+        mirrorBackspace();
+      }
+    };
+
+    const onAndroidImeText = (event: Event) => {
+      const text = (event as CustomEvent<{ text?: string }>).detail?.text;
+      if (!text) return;
+
+      for (const char of text) {
+        if (/^[0-9]$/.test(char)) {
+          mirrorDigit(char);
+        } else if (char === "\b" || char === "\u007f") {
+          mirrorBackspace();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    window.addEventListener("jetkvm-android-ime-text", onAndroidImeText);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+      window.removeEventListener("jetkvm-android-ime-text", onAndroidImeText);
+    };
+  }, [active, mirrorBackspace, mirrorDigit]);
+
   const sendKey = useCallback(
     async (key: string) => {
       const steps: MacroStep[] = [{ keys: [key], modifiers: null, delay: 80 }];
@@ -66,16 +117,16 @@ export default function CredentialPromptOverlay() {
 
   const pressDigit = useCallback(
     (digit: string) => {
-      setEnteredDigits(value => `${value}${digit}`.slice(-MAX_VISIBLE_DIGITS));
+      mirrorDigit(digit);
       void sendKey(`Digit${digit}`);
     },
-    [sendKey],
+    [mirrorDigit, sendKey],
   );
 
   const pressBackspace = useCallback(() => {
-    setEnteredDigits(value => value.slice(0, -1));
+    mirrorBackspace();
     void sendKey("Backspace");
-  }, [sendKey]);
+  }, [mirrorBackspace, sendKey]);
 
   const pressEnter = useCallback(() => {
     void sendKey("Enter");
