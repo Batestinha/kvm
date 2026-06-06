@@ -170,6 +170,9 @@ type companionStatusSnapshot struct {
 	Evidence                         []string           `json:"evidence,omitempty"`
 	Peripherals                      map[string]bool    `json:"peripherals,omitempty"`
 	PendingActions                   []string           `json:"pending_actions,omitempty"`
+	KeyguardAuthState                string             `json:"keyguard_auth_state,omitempty"`
+	KeyguardAuthSession              string             `json:"keyguard_auth_session,omitempty"`
+	KeyguardAuthUpdatedUnixMilli     int64              `json:"keyguard_auth_updated_unix_milli,omitempty"`
 }
 
 var (
@@ -383,6 +386,10 @@ func handleCompanionTargetDeclaration(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported preferred_mouse_mode"})
 		return
 	}
+	if declaration.KeyguardAuthState != "" && !isValidKeyguardAuthState(declaration.KeyguardAuthState) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported keyguard_auth_state"})
+		return
+	}
 	if declaration.State == "connected" && len(declaration.Evidence) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "connection evidence is required"})
 		return
@@ -400,6 +407,7 @@ func handleCompanionTargetDeclaration(c *gin.Context) {
 	logger.Info().
 		Str("companion_id", companionID).
 		Str("state", declaration.State).
+		Str("keyguard_auth_state", declaration.KeyguardAuthState).
 		Strs("evidence", metadata.Evidence).
 		Str("preferred_mouse_mode", metadata.PreferredMouseMode).
 		Int("display_width", metadata.DisplayWidth).
@@ -1010,11 +1018,34 @@ func rememberCompanionStatus(companionID string, remoteAddr string, declaration 
 		DisplayHeight:                    declaration.DisplayHeight,
 		Evidence:                         cleanStringList(declaration.Evidence),
 		Peripherals:                      peripherals,
+		KeyguardAuthState:                strings.TrimSpace(declaration.KeyguardAuthState),
+		KeyguardAuthSession:              strings.TrimSpace(declaration.KeyguardAuthSession),
+	}
+	if status.KeyguardAuthState != "" {
+		status.KeyguardAuthUpdatedUnixMilli = status.LastSeenUnixMilli
 	}
 
 	companionStatusLock.Lock()
+	if status.KeyguardAuthState == "" && declaration.State != "disconnected" {
+		previous := companionStatuses[companionID]
+		status.KeyguardAuthState = previous.KeyguardAuthState
+		status.KeyguardAuthSession = previous.KeyguardAuthSession
+		status.KeyguardAuthUpdatedUnixMilli = previous.KeyguardAuthUpdatedUnixMilli
+	}
 	companionStatuses[companionID] = status
 	companionStatusLock.Unlock()
+}
+
+func isValidKeyguardAuthState(state string) bool {
+	switch state {
+	case "device_already_unlocked",
+		"credential_entry_requested",
+		"credential_entry_succeeded",
+		"credential_entry_failed":
+		return true
+	default:
+		return false
+	}
 }
 
 func companionVisibleIPEntries(ips []string) []companionIPEntry {

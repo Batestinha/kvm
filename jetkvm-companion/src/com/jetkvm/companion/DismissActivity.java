@@ -88,12 +88,14 @@ public class DismissActivity extends Activity {
         Log.i(CompanionService.TAG, reason + " keyguardLocked=" + keyguardLocked + " deviceLocked=" + deviceLocked);
 
         if (!keyguardLocked) {
+            reportKeyguardAuthState(CompanionService.AUTH_DEVICE_ALREADY_UNLOCKED);
             handler.removeCallbacks(finishTimeout);
             finishAndRemoveTask();
             return;
         }
 
         dismissInFlight = true;
+        reportKeyguardAuthState(CompanionService.AUTH_CREDENTIAL_ENTRY_REQUESTED);
         keyguardManager.requestDismissKeyguard(this, new KeyguardManager.KeyguardDismissCallback() {
             @Override
             public void onDismissError() {
@@ -125,5 +127,12 @@ public class DismissActivity extends Activity {
         boolean keyguardLocked = keyguardManager != null && keyguardManager.isKeyguardLocked();
         boolean deviceLocked = keyguardManager != null && keyguardManager.isDeviceLocked();
         Log.i(CompanionService.TAG, label + " keyguardLocked=" + keyguardLocked + " deviceLocked=" + deviceLocked);
+    }
+
+    private void reportKeyguardAuthState(String state) {
+        Intent intent = new Intent(CompanionService.ACTION_KEYGUARD_AUTH_STATE);
+        intent.setPackage(getPackageName());
+        intent.putExtra(CompanionService.EXTRA_KEYGUARD_AUTH_STATE, state);
+        sendBroadcast(intent);
     }
 }

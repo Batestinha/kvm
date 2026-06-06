@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Presentation;
 import android.app.Service;
+import android.app.KeyguardManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -73,6 +74,12 @@ import java.security.cert.X509Certificate;
 public class CompanionService extends Service implements InputManager.InputDeviceListener {
     static final String TAG = "JetKVMCompanion";
     static final String ACTION_SCREEN_ON = "com.jetkvm.companion.SCREEN_ON";
+    static final String ACTION_KEYGUARD_AUTH_STATE = "com.jetkvm.companion.KEYGUARD_AUTH_STATE";
+    static final String EXTRA_KEYGUARD_AUTH_STATE = "keyguard_auth_state";
+    static final String AUTH_DEVICE_ALREADY_UNLOCKED = "device_already_unlocked";
+    static final String AUTH_CREDENTIAL_ENTRY_REQUESTED = "credential_entry_requested";
+    static final String AUTH_CREDENTIAL_ENTRY_SUCCEEDED = "credential_entry_succeeded";
+    static final String AUTH_CREDENTIAL_ENTRY_FAILED = "credential_entry_failed";
     static final String PREFS = "jetkvm_companion";
     static final String KEY_LAUNCH_ON_BOOT = "launch_on_boot";
     static final String KEY_JETKVM_URL = "jetkvm_url";
@@ -95,6 +102,8 @@ public class CompanionService extends Service implements InputManager.InputDevic
     private static final long TARGET_REPORT_INTERVAL_MS = 15000;
     private static final long TARGET_LEASE_MS = 120000;
     private static final long TARGET_PRESENTATION_PULSE_MS = 750;
+    private static final long KEYGUARD_AUTH_WATCH_INTERVAL_MS = 500;
+    private static final long KEYGUARD_AUTH_WATCH_TIMEOUT_MS = 120000;
     private static final String JETKVM_INPUT_NAME_TOKEN = "jetkvm";
     private static final String JETKVM_DISPLAY_NAME_TOKEN = "jetkvm";
     private static final String JETKVM_SHORT_DISPLAY_NAME_TOKEN = "jkvm";
@@ -103,10 +112,13 @@ public class CompanionService extends Service implements InputManager.InputDevic
 
     private WindowManager windowManager;
     private DisplayManager displayManager;
+    private KeyguardManager keyguardManager;
     private InputManager inputManager;
     private View launchAssistOverlay;
     private TargetPresentation targetPresentation;
     private int targetPresentationDisplayId = -1;
+    private String activeKeyguardAuthSession = "";
+    private long keyguardAuthWatchDeadlineMs;
     private final Runnable dismissTargetPresentationRunnable = new Runnable() {
         @Override
         public void run() {
@@ -177,6 +189,21 @@ public class CompanionService extends Service implements InputManager.InputDevic
         }
     };
 
+    private final BroadcastReceiver keyguardAuthReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!ACTION_KEYGUARD_AUTH_STATE.equals(intent.getAction())) return;
+            handleKeyguardAuthState(intent.getStringExtra(EXTRA_KEYGUARD_AUTH_STATE));
+        }
+    };
+
+    private final Runnable keyguardAuthWatchRunnable = new Runnable() {
+        @Override
+        public void run() {
+            evaluateKeyguardAuthWatch();
+        }
+    };
+
     private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
         @Override
         public void onDisplayAdded(int displayId) {
@@ -215,6 +242,7 @@ public class CompanionService extends Service implements InputManager.InputDevic
         startForeground(activeNotificationId, buildNotification(activeNotificationBody));
         ensureLaunchAssistOverlay();
         displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
         if (displayManager != null) {
             displayManager.registerDisplayListener(displayListener, handler);
         }
@@ -228,6 +256,15 @@ public class CompanionService extends Service implements InputManager.InputDevic
         filter.addAction(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_SCREEN_ON);
         registerReceiver(screenReceiver, filter);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(
+                keyguardAuthReceiver,
+                new IntentFilter(ACTION_KEYGUARD_AUTH_STATE),
+                Context.RECEIVER_NOT_EXPORTED
+            );
+        } else {
+            registerReceiver(keyguardAuthReceiver, new IntentFilter(ACTION_KEYGUARD_AUTH_STATE));
+        }
         startPairingRequestServer();
         Log.i(TAG, "service onCreate");
     }
@@ -251,6 +288,8 @@ public class CompanionService extends Service implements InputManager.InputDevic
             displayManager.unregisterDisplayListener(displayListener);
         }
         unregisterReceiver(screenReceiver);
+        unregisterReceiver(keyguardAuthReceiver);
+        handler.removeCallbacks(keyguardAuthWatchRunnable);
         dismissTargetPresentation("destroy");
         removeLaunchAssistOverlay();
         stopPairingRequestServer();
@@ -404,10 +443,31 @@ public class CompanionService extends Service implements InputManager.InputDevic
             @Override
             public void run() {
                 for (String jetkvmUrl : jetkvmUrls) {
-                    postTargetDeclaration(jetkvmUrl, true, width, height, snapshot);
+                    postTargetDeclaration(jetkvmUrl, true, width, height, snapshot, "", "");
                 }
             }
         }, "JetKVM-target-report").start();
+    }
+
+    private void reportKeyguardAuthStateAsync(final String state, final String session) {
+        final JetKvmPeripheralSnapshot snapshot = currentSnapshot;
+        final String[] jetkvmUrls = getPairedJetKvmUrlsForIdentityToken(
+            getCompanionPreferences(this),
+            snapshot.connectedIdentityToken
+        );
+        final DisplayMetrics metrics = getResources().getDisplayMetrics();
+        final int width = Math.min(metrics.widthPixels, metrics.heightPixels);
+        final int height = Math.max(metrics.widthPixels, metrics.heightPixels);
+        if (width <= 0 || height <= 0 || jetkvmUrls.length == 0) return;
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                for (String jetkvmUrl : jetkvmUrls) {
+                    postTargetDeclaration(jetkvmUrl, true, width, height, snapshot, state, session);
+                }
+            }
+        }, "JetKVM-keyguard-auth-report").start();
     }
 
     private void reportTargetDisconnectAsync(String identityToken) {
@@ -418,7 +478,7 @@ public class CompanionService extends Service implements InputManager.InputDevic
             @Override
             public void run() {
                 for (String jetkvmUrl : jetkvmUrls) {
-                    postTargetDeclaration(jetkvmUrl, false, 0, 0, currentSnapshot);
+                    postTargetDeclaration(jetkvmUrl, false, 0, 0, currentSnapshot, "", "");
                 }
             }
         }, "JetKVM-target-disconnect").start();
@@ -436,7 +496,8 @@ public class CompanionService extends Service implements InputManager.InputDevic
         Log.i(TAG, "JetKVM URL updated from intent saved=" + saved + " url=" + value);
     }
 
-    private void postTargetDeclaration(String baseUrl, boolean connected, int width, int height, JetKvmPeripheralSnapshot snapshot) {
+    private void postTargetDeclaration(String baseUrl, boolean connected, int width, int height,
+            JetKvmPeripheralSnapshot snapshot, String keyguardAuthState, String keyguardAuthSession) {
         HttpsURLConnection conn = null;
         try {
             String trimmedBaseUrl = normalizeJetKvmUrl(baseUrl);
@@ -463,6 +524,10 @@ public class CompanionService extends Service implements InputManager.InputDevic
             payload.put("battery_unrestricted_granted", isIgnoringBatteryOptimizations());
             payload.put("paired_jetkvm_urls", new JSONArray(getPairedJetKvmUrls(prefs)));
             payload.put("visible_ips", new JSONArray(getVisibleLocalIPs()));
+            if (keyguardAuthState != null && keyguardAuthState.length() > 0) {
+                payload.put("keyguard_auth_state", keyguardAuthState);
+                payload.put("keyguard_auth_session", keyguardAuthSession == null ? "" : keyguardAuthSession);
+            }
             if (connected) {
                 payload.put("preferred_mouse_mode", "digitizer");
                 payload.put("display_width", width);
@@ -1057,6 +1122,62 @@ public class CompanionService extends Service implements InputManager.InputDevic
         } catch (RuntimeException e) {
             Log.i(TAG, "starting dismiss activity failed: " + e.getClass().getSimpleName());
         }
+    }
+
+    private void handleKeyguardAuthState(String state) {
+        if (AUTH_DEVICE_ALREADY_UNLOCKED.equals(state)) {
+            stopKeyguardAuthWatch();
+            reportKeyguardAuthStateAsync(AUTH_DEVICE_ALREADY_UNLOCKED, UUID.randomUUID().toString());
+            return;
+        }
+        if (AUTH_CREDENTIAL_ENTRY_REQUESTED.equals(state)) {
+            activeKeyguardAuthSession = UUID.randomUUID().toString();
+            keyguardAuthWatchDeadlineMs = System.currentTimeMillis() + KEYGUARD_AUTH_WATCH_TIMEOUT_MS;
+            reportKeyguardAuthStateAsync(AUTH_CREDENTIAL_ENTRY_REQUESTED, activeKeyguardAuthSession);
+            handler.removeCallbacks(keyguardAuthWatchRunnable);
+            handler.postDelayed(keyguardAuthWatchRunnable, KEYGUARD_AUTH_WATCH_INTERVAL_MS);
+        }
+    }
+
+    private void evaluateKeyguardAuthWatch() {
+        if (activeKeyguardAuthSession.length() == 0) return;
+
+        boolean locked = isKeyguardLocked();
+        boolean displayOn = isJetKvmExternalDisplayOn();
+        if (!locked && displayOn) {
+            finishKeyguardAuthWatch(AUTH_CREDENTIAL_ENTRY_SUCCEEDED);
+            return;
+        }
+        if (locked && !displayOn) {
+            finishKeyguardAuthWatch(AUTH_CREDENTIAL_ENTRY_FAILED);
+            return;
+        }
+        if (System.currentTimeMillis() >= keyguardAuthWatchDeadlineMs) {
+            finishKeyguardAuthWatch(AUTH_CREDENTIAL_ENTRY_FAILED);
+            return;
+        }
+        handler.postDelayed(keyguardAuthWatchRunnable, KEYGUARD_AUTH_WATCH_INTERVAL_MS);
+    }
+
+    private void finishKeyguardAuthWatch(String state) {
+        String session = activeKeyguardAuthSession;
+        stopKeyguardAuthWatch();
+        reportKeyguardAuthStateAsync(state, session);
+    }
+
+    private void stopKeyguardAuthWatch() {
+        handler.removeCallbacks(keyguardAuthWatchRunnable);
+        activeKeyguardAuthSession = "";
+        keyguardAuthWatchDeadlineMs = 0;
+    }
+
+    private boolean isKeyguardLocked() {
+        return keyguardManager != null && keyguardManager.isKeyguardLocked();
+    }
+
+    private boolean isJetKvmExternalDisplayOn() {
+        Display display = findJetKvmPresentationDisplay("keyguardAuthWatch");
+        return display != null && display.getState() != Display.STATE_OFF;
     }
 
     private void ensureLaunchAssistOverlay() {

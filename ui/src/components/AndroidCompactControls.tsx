@@ -52,7 +52,10 @@ declare global {
 }
 
 const STORAGE_KEY = "androidCompactControlPosition";
+const CREDENTIAL_PROMPT_STORAGE_KEY = "androidCredentialPromptPosition";
 const BUTTON_SIZE = 50;
+const CREDENTIAL_PROMPT_WIDTH = 188;
+const CREDENTIAL_PROMPT_HEIGHT = 48;
 const EDGE_PADDING = 10;
 const PANEL_WIDTH = 320;
 const PANEL_MAX_HEIGHT_MARGIN = 20;
@@ -77,6 +80,28 @@ const clampPosition = (position: Position): Position => {
   };
 };
 
+const getDefaultCredentialPromptPosition = (): Position => {
+  if (typeof window === "undefined") return { x: EDGE_PADDING, y: EDGE_PADDING };
+
+  return {
+    x: Math.max(EDGE_PADDING, Math.round((window.innerWidth - CREDENTIAL_PROMPT_WIDTH) / 2)),
+    y: Math.max(EDGE_PADDING, Math.round(window.innerHeight * 0.2)),
+  };
+};
+
+const clampCredentialPromptPosition = (position: Position): Position => {
+  if (typeof window === "undefined") return position;
+
+  return {
+    x: clamp(position.x, EDGE_PADDING, window.innerWidth - CREDENTIAL_PROMPT_WIDTH - EDGE_PADDING),
+    y: clamp(
+      position.y,
+      EDGE_PADDING,
+      window.innerHeight - CREDENTIAL_PROMPT_HEIGHT - EDGE_PADDING,
+    ),
+  };
+};
+
 const getStoredPosition = (): Position => {
   if (typeof window === "undefined") return { x: EDGE_PADDING, y: EDGE_PADDING };
 
@@ -92,6 +117,23 @@ const getStoredPosition = (): Position => {
   }
 
   return getDefaultPosition();
+};
+
+const getStoredCredentialPromptPosition = (): Position => {
+  if (typeof window === "undefined") return { x: EDGE_PADDING, y: EDGE_PADDING };
+
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(CREDENTIAL_PROMPT_STORAGE_KEY) || "null",
+    ) as Position | null;
+    if (parsed && Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) {
+      return clampCredentialPromptPosition(parsed);
+    }
+  } catch {
+    window.localStorage.removeItem(CREDENTIAL_PROMPT_STORAGE_KEY);
+  }
+
+  return getDefaultCredentialPromptPosition();
 };
 
 function ActionButton({
@@ -131,7 +173,7 @@ function RequestCountBadge({ className, count }: { className?: string; count: nu
     <span
       className={cx(
         "flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5",
-        "text-[11px] font-semibold leading-none text-white",
+        "text-[11px] leading-none font-semibold text-white",
         className,
       )}
     >
@@ -160,6 +202,10 @@ export default function AndroidCompactControls() {
   const [position, setPosition] = useState<Position>(() => getStoredPosition());
   const [open, setOpen] = useState(false);
   const [requestCenterOpen, setRequestCenterOpen] = useState(false);
+  const [credentialPromptActive, setCredentialPromptActive] = useState(false);
+  const [credentialPromptPosition, setCredentialPromptPosition] = useState<Position>(() =>
+    getStoredCredentialPromptPosition(),
+  );
   const [panel, setPanel] = useState<Panel>("root");
   const [companionRequestCount, setCompanionRequestCount] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -172,11 +218,22 @@ export default function AndroidCompactControls() {
     startX: number;
     startY: number;
   } | null>(null);
+  const credentialPromptDragRef = useRef<{
+    offsetX: number;
+    offsetY: number;
+    pointerId: number;
+  } | null>(null);
 
   const persistPosition = useCallback((next: Position) => {
     const clamped = clampPosition(next);
     setPosition(clamped);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(clamped));
+  }, []);
+
+  const persistCredentialPromptPosition = useCallback((next: Position) => {
+    const clamped = clampCredentialPromptPosition(next);
+    setCredentialPromptPosition(clamped);
+    window.localStorage.setItem(CREDENTIAL_PROMPT_STORAGE_KEY, JSON.stringify(clamped));
   }, []);
 
   const closePanel = useCallback(() => {
@@ -265,6 +322,16 @@ export default function AndroidCompactControls() {
   }, [persistPosition, position]);
 
   useEffect(() => {
+    const onResize = () => persistCredentialPromptPosition(credentialPromptPosition);
+    window.addEventListener("orientationchange", onResize);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("orientationchange", onResize);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [credentialPromptPosition, persistCredentialPromptPosition]);
+
+  useEffect(() => {
     if (!open) return;
 
     const onPointerDown = (event: PointerEvent) => {
@@ -340,6 +407,34 @@ export default function AndroidCompactControls() {
     }
   };
 
+  const startCredentialPromptDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    credentialPromptDragRef.current = {
+      offsetX: event.clientX - credentialPromptPosition.x,
+      offsetY: event.clientY - credentialPromptPosition.y,
+      pointerId: event.pointerId,
+    };
+  };
+
+  const moveCredentialPromptDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = credentialPromptDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    persistCredentialPromptPosition({
+      x: event.clientX - drag.offsetX,
+      y: event.clientY - drag.offsetY,
+    });
+  };
+
+  const finishCredentialPromptDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = credentialPromptDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    credentialPromptDragRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   const toggleDisplay = useCallback(() => {
     void executeMacro([{ keys: ["Power"], modifiers: null, delay: 80 }]);
     closePanel();
@@ -380,7 +475,7 @@ export default function AndroidCompactControls() {
         {open ? <LuX className="h-7 w-7" /> : <LuMenu className="h-7 w-7" />}
         <RequestCountBadge
           count={companionRequestCount}
-          className="absolute -right-1 -top-1 border border-slate-950/40"
+          className="absolute -top-1 -right-1 border border-slate-950/40"
         />
       </button>
 
@@ -513,10 +608,34 @@ export default function AndroidCompactControls() {
           )}
         </div>
       )}
+      {credentialPromptActive && (
+        <div
+          role="status"
+          className={cx(
+            "fixed z-[60] flex touch-none items-center justify-center rounded-md select-none",
+            "bg-black/50 px-4 text-center text-base font-semibold text-white shadow-xl",
+          )}
+          style={{
+            height: CREDENTIAL_PROMPT_HEIGHT,
+            left: credentialPromptPosition.x,
+            top: credentialPromptPosition.y,
+            width: CREDENTIAL_PROMPT_WIDTH,
+          }}
+          onPointerCancel={() => {
+            credentialPromptDragRef.current = null;
+          }}
+          onPointerDown={startCredentialPromptDrag}
+          onPointerMove={moveCredentialPromptDrag}
+          onPointerUp={finishCredentialPromptDrag}
+        >
+          Enter credentials
+        </div>
+      )}
       <CompanionRequestCenter
         compact
         forceOpen={requestCenterOpen}
         hideTrigger
+        onCredentialPromptActiveChange={setCredentialPromptActive}
         onClose={() => setRequestCenterOpen(false)}
         onRequestCountChange={setCompanionRequestCount}
       />

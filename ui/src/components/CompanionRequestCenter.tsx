@@ -41,6 +41,9 @@ type CompanionStatus = {
   evidence?: string[];
   peripherals?: Record<string, boolean>;
   pending_actions?: string[];
+  keyguard_auth_state?: string;
+  keyguard_auth_session?: string;
+  keyguard_auth_updated_unix_milli?: number;
 };
 
 type VisibleIP = {
@@ -83,6 +86,7 @@ const permissionDescriptors = [
 const PAIRED_SECTION_STORAGE_KEY = "jetkvm.companion.pairedCollapsed";
 const VISIBLE_IPS_SECTION_STORAGE_KEY = "jetkvm.companion.visibleIpsCollapsed";
 const PAIRING_CODE_TTL_MS = 120_000;
+const KEYGUARD_AUTH_PROMPT_TTL_MS = 130_000;
 
 const countCompanionRequests = (requests: CompanionPairRequest[]) =>
   requests.filter(request => request.direction !== "jetkvm").length;
@@ -93,6 +97,7 @@ export default function CompanionRequestCenter({
   hideTrigger = false,
   onOpen,
   onClose,
+  onCredentialPromptActiveChange,
   onRequestCountChange,
 }: {
   compact?: boolean;
@@ -100,6 +105,7 @@ export default function CompanionRequestCenter({
   hideTrigger?: boolean;
   onOpen?: () => void;
   onClose?: () => void;
+  onCredentialPromptActiveChange?: (active: boolean) => void;
   onRequestCountChange?: (count: number) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -323,6 +329,15 @@ export default function CompanionRequestCenter({
   useEffect(() => {
     onRequestCountChange?.(count);
   }, [count, onRequestCountChange]);
+
+  useEffect(() => {
+    const active = companions.some(companion => {
+      if (companion.keyguard_auth_state !== "credential_entry_requested") return false;
+      const updatedAt = companion.keyguard_auth_updated_unix_milli || 0;
+      return updatedAt > 0 && nowMs - updatedAt <= KEYGUARD_AUTH_PROMPT_TTL_MS;
+    });
+    onCredentialPromptActiveChange?.(active);
+  }, [companions, nowMs, onCredentialPromptActiveChange]);
 
   useEffect(() => {
     if (!isOpen) return;

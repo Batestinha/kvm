@@ -38,6 +38,8 @@ type CompanionTargetDeclaration struct {
 	BatteryUnrestrictedGranted       bool     `json:"battery_unrestricted_granted"`
 	PairedJetKVMURLs                 []string `json:"paired_jetkvm_urls"`
 	VisibleIPs                       []string `json:"visible_ips"`
+	KeyguardAuthState                string   `json:"keyguard_auth_state,omitempty"`
+	KeyguardAuthSession              string   `json:"keyguard_auth_session,omitempty"`
 }
 
 var (
