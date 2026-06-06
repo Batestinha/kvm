@@ -402,7 +402,7 @@ func handleCompanionTargetDeclaration(c *gin.Context) {
 	metadata := setCompanionTargetMetadata(declaration)
 	applyDisplayModeForTarget(metadata)
 	metadata = withDisplayReconnectStatus(metadata)
-	rememberCompanionStatus(companionID, c.ClientIP(), declaration)
+	rememberCompanionStatus(companionID, c.ClientIP(), "https://"+c.Request.Host, declaration)
 	pendingActions := takeCompanionPendingActions(companionID)
 	logger.Info().
 		Str("companion_id", companionID).
@@ -987,7 +987,7 @@ func removeCompanionAuthorization(companionID string) {
 	}
 }
 
-func rememberCompanionStatus(companionID string, remoteAddr string, declaration CompanionTargetDeclaration) {
+func rememberCompanionStatus(companionID string, remoteAddr string, jetkvmURL string, declaration CompanionTargetDeclaration) {
 	companionID = strings.TrimSpace(companionID)
 	if companionID == "" {
 		return
@@ -999,6 +999,11 @@ func rememberCompanionStatus(companionID string, remoteAddr string, declaration 
 			peripherals[strings.ToLower(strings.TrimSpace(evidence))] = true
 		}
 	}
+	pairedJetKVMURLs := cleanStringList(declaration.PairedJetKVMURLs)
+	if len(pairedJetKVMURLs) == 0 {
+		pairedJetKVMURLs = cleanStringList([]string{jetkvmURL})
+	}
+
 	status := companionStatusSnapshot{
 		CompanionID:                      companionID,
 		RemoteAddr:                       remoteAddr,
@@ -1008,7 +1013,7 @@ func rememberCompanionStatus(companionID string, remoteAddr string, declaration 
 		NotificationPermissionGranted:    declaration.NotificationPermissionGranted,
 		DisplayOverAppsPermissionGranted: declaration.DisplayOverAppsPermissionGranted,
 		BatteryUnrestrictedGranted:       declaration.BatteryUnrestrictedGranted,
-		PairedJetKVMURLs:                 cleanStringList(declaration.PairedJetKVMURLs),
+		PairedJetKVMURLs:                 pairedJetKVMURLs,
 		VisibleIPs:                       cleanStringList(declaration.VisibleIPs),
 		VisibleIPEntries:                 companionVisibleIPEntries(declaration.VisibleIPs),
 		JetKVMUSBIdentity:                strings.TrimSpace(declaration.JetKVMUSBIdentity),
@@ -1026,8 +1031,15 @@ func rememberCompanionStatus(companionID string, remoteAddr string, declaration 
 	}
 
 	companionStatusLock.Lock()
+	previous := companionStatuses[companionID]
+	if keyguardAuthStateIsTerminal(previous.KeyguardAuthState) &&
+		previous.KeyguardAuthSession != "" &&
+		previous.KeyguardAuthSession == status.KeyguardAuthSession &&
+		status.KeyguardAuthState == "credential_entry_requested" {
+		status.KeyguardAuthState = previous.KeyguardAuthState
+		status.KeyguardAuthUpdatedUnixMilli = previous.KeyguardAuthUpdatedUnixMilli
+	}
 	if status.KeyguardAuthState == "" && declaration.State != "disconnected" {
-		previous := companionStatuses[companionID]
 		status.KeyguardAuthState = previous.KeyguardAuthState
 		status.KeyguardAuthSession = previous.KeyguardAuthSession
 		status.KeyguardAuthUpdatedUnixMilli = previous.KeyguardAuthUpdatedUnixMilli
@@ -1040,6 +1052,17 @@ func isValidKeyguardAuthState(state string) bool {
 	switch state {
 	case "device_already_unlocked",
 		"credential_entry_requested",
+		"credential_entry_succeeded",
+		"credential_entry_failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func keyguardAuthStateIsTerminal(state string) bool {
+	switch state {
+	case "device_already_unlocked",
 		"credential_entry_succeeded",
 		"credential_entry_failed":
 		return true

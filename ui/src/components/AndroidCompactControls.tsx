@@ -54,6 +54,7 @@ type CompanionStatusResponse = {
 declare global {
   interface Window {
     JetKVMAndroid?: {
+      hideKeyboard?: () => void;
       showInputMethod?: () => void;
     };
   }
@@ -217,6 +218,7 @@ export default function AndroidCompactControls() {
   const [panel, setPanel] = useState<Panel>("root");
   const [companionRequestCount, setCompanionRequestCount] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const credentialPromptWasActiveRef = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     moved: boolean;
@@ -382,6 +384,16 @@ export default function AndroidCompactControls() {
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [closePanel, open]);
+
+  useEffect(() => {
+    if (credentialPromptActive) {
+      credentialPromptWasActiveRef.current = true;
+      window.JetKVMAndroid?.showInputMethod?.();
+    } else if (credentialPromptWasActiveRef.current) {
+      credentialPromptWasActiveRef.current = false;
+      window.JetKVMAndroid?.hideKeyboard?.();
+    }
+  }, [credentialPromptActive]);
 
   const panelStyle = useMemo(() => {
     if (typeof window === "undefined")
