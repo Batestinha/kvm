@@ -367,7 +367,7 @@ export default function CompanionRequestCenter({
           )}
           onClick={openPanel}
         >
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#3ddc84]">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-950 dark:bg-white/15">
             <MdAndroid className="h-4 w-4 text-white" />
           </span>
           {compact && <span className="min-w-0 truncate">Android Requests</span>}
