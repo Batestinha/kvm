@@ -41,6 +41,18 @@ export default function CredentialPromptOverlay() {
     setEnteredDigits(value => value.slice(0, -1));
   }, []);
 
+  const sendKey = useCallback(
+    async (key: string) => {
+      const steps: MacroStep[] = [{ keys: [key], modifiers: null, delay: 80 }];
+      await executeMacro(steps);
+    },
+    [executeMacro],
+  );
+
+  const pressEnter = useCallback(() => {
+    void sendKey("Enter");
+  }, [sendKey]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -75,6 +87,14 @@ export default function CredentialPromptOverlay() {
     if (!active) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter") {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        pressEnter();
+        return;
+      }
+
       const digit = digitFromKeyboardEvent(event);
       if (digit !== null) {
         mirrorDigit(digit);
@@ -93,6 +113,8 @@ export default function CredentialPromptOverlay() {
       for (const char of text) {
         if (/^[0-9]$/.test(char)) {
           mirrorDigit(char);
+        } else if (char === "\n" || char === "\r") {
+          pressEnter();
         } else if (char === "\b" || char === "\u007f") {
           mirrorBackspace();
         }
@@ -105,15 +127,7 @@ export default function CredentialPromptOverlay() {
       window.removeEventListener("keydown", onKeyDown, { capture: true });
       window.removeEventListener("jetkvm-android-ime-text", onAndroidImeText);
     };
-  }, [active, mirrorBackspace, mirrorDigit]);
-
-  const sendKey = useCallback(
-    async (key: string) => {
-      const steps: MacroStep[] = [{ keys: [key], modifiers: null, delay: 80 }];
-      await executeMacro(steps);
-    },
-    [executeMacro],
-  );
+  }, [active, mirrorBackspace, mirrorDigit, pressEnter]);
 
   const pressDigit = useCallback(
     (digit: string) => {
@@ -127,10 +141,6 @@ export default function CredentialPromptOverlay() {
     mirrorBackspace();
     void sendKey("Backspace");
   }, [mirrorBackspace, sendKey]);
-
-  const pressEnter = useCallback(() => {
-    void sendKey("Enter");
-  }, [sendKey]);
 
   if (!active) return null;
 
